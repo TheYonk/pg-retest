@@ -1,0 +1,4 @@
+/target
+*.wkl
+*.swp
+.DS_Store
