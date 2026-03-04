@@ -32,9 +32,8 @@ pub async fn replay_session(
         }
 
         // Wait until the scaled target time
-        let target_offset = std::time::Duration::from_micros(
-            (query.start_offset_us as f64 / speed) as u64,
-        );
+        let target_offset =
+            std::time::Duration::from_micros((query.start_offset_us as f64 / speed) as u64);
         sleep_until(replay_start + target_offset).await;
 
         let start = Instant::now();

@@ -6,7 +6,9 @@ use std::path::Path;
 fn test_csv_log_capture_parses_sessions() {
     let capture = CsvLogCapture;
     let path = Path::new("tests/fixtures/sample_pg.csv");
-    let profile = capture.capture_from_file(path, "localhost", "16.2").unwrap();
+    let profile = capture
+        .capture_from_file(path, "localhost", "16.2")
+        .unwrap();
 
     assert_eq!(profile.version, 1);
     assert_eq!(profile.capture_method, "csv_log");
@@ -19,11 +21,15 @@ fn test_csv_log_capture_parses_sessions() {
 fn test_csv_log_capture_session_ordering() {
     let capture = CsvLogCapture;
     let path = Path::new("tests/fixtures/sample_pg.csv");
-    let profile = capture.capture_from_file(path, "localhost", "16.2").unwrap();
+    let profile = capture
+        .capture_from_file(path, "localhost", "16.2")
+        .unwrap();
 
     // Find session for process_id 1234 (session_id 6600a000.4d2)
     // It should have 3 queries, ordered by timestamp
-    let session = profile.sessions.iter()
+    let session = profile
+        .sessions
+        .iter()
         .find(|s| s.user == "app_user" && s.queries.len() == 3)
         .expect("Should find app_user session with 3 queries");
 
@@ -41,9 +47,13 @@ fn test_csv_log_capture_session_ordering() {
 fn test_csv_log_capture_duration_parsing() {
     let capture = CsvLogCapture;
     let path = Path::new("tests/fixtures/sample_pg.csv");
-    let profile = capture.capture_from_file(path, "localhost", "16.2").unwrap();
+    let profile = capture
+        .capture_from_file(path, "localhost", "16.2")
+        .unwrap();
 
-    let session = profile.sessions.iter()
+    let session = profile
+        .sessions
+        .iter()
         .find(|s| s.user == "app_user" && s.queries.len() == 3)
         .expect("Should find app_user session");
 
@@ -57,9 +67,13 @@ fn test_csv_log_capture_duration_parsing() {
 fn test_csv_log_capture_admin_session() {
     let capture = CsvLogCapture;
     let path = Path::new("tests/fixtures/sample_pg.csv");
-    let profile = capture.capture_from_file(path, "localhost", "16.2").unwrap();
+    let profile = capture
+        .capture_from_file(path, "localhost", "16.2")
+        .unwrap();
 
-    let session = profile.sessions.iter()
+    let session = profile
+        .sessions
+        .iter()
         .find(|s| s.user == "admin")
         .expect("Should find admin session");
 

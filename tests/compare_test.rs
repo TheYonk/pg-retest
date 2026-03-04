@@ -1,7 +1,7 @@
+use chrono::Utc;
 use pg_retest::compare::compute_comparison;
 use pg_retest::profile::{Metadata, Query, QueryKind, Session, WorkloadProfile};
 use pg_retest::replay::{QueryResult, ReplayResults};
-use chrono::Utc;
 
 fn make_source_profile() -> WorkloadProfile {
     WorkloadProfile {
@@ -15,13 +15,37 @@ fn make_source_profile() -> WorkloadProfile {
             user: "app".into(),
             database: "db".into(),
             queries: vec![
-                Query { sql: "SELECT 1".into(), start_offset_us: 0, duration_us: 100, kind: QueryKind::Select },
-                Query { sql: "SELECT 2".into(), start_offset_us: 500, duration_us: 200, kind: QueryKind::Select },
-                Query { sql: "UPDATE t SET x=1".into(), start_offset_us: 1000, duration_us: 300, kind: QueryKind::Update },
-                Query { sql: "SELECT 3".into(), start_offset_us: 1500, duration_us: 5000, kind: QueryKind::Select },
+                Query {
+                    sql: "SELECT 1".into(),
+                    start_offset_us: 0,
+                    duration_us: 100,
+                    kind: QueryKind::Select,
+                },
+                Query {
+                    sql: "SELECT 2".into(),
+                    start_offset_us: 500,
+                    duration_us: 200,
+                    kind: QueryKind::Select,
+                },
+                Query {
+                    sql: "UPDATE t SET x=1".into(),
+                    start_offset_us: 1000,
+                    duration_us: 300,
+                    kind: QueryKind::Update,
+                },
+                Query {
+                    sql: "SELECT 3".into(),
+                    start_offset_us: 1500,
+                    duration_us: 5000,
+                    kind: QueryKind::Select,
+                },
             ],
         }],
-        metadata: Metadata { total_queries: 4, total_sessions: 1, capture_duration_us: 6500 },
+        metadata: Metadata {
+            total_queries: 4,
+            total_sessions: 1,
+            capture_duration_us: 6500,
+        },
     }
 }
 
@@ -29,10 +53,34 @@ fn make_replay_results() -> Vec<ReplayResults> {
     vec![ReplayResults {
         session_id: 1,
         query_results: vec![
-            QueryResult { sql: "SELECT 1".into(), original_duration_us: 100, replay_duration_us: 80, success: true, error: None },
-            QueryResult { sql: "SELECT 2".into(), original_duration_us: 200, replay_duration_us: 250, success: true, error: None },
-            QueryResult { sql: "UPDATE t SET x=1".into(), original_duration_us: 300, replay_duration_us: 280, success: true, error: None },
-            QueryResult { sql: "SELECT 3".into(), original_duration_us: 5000, replay_duration_us: 4500, success: false, error: Some("timeout".into()) },
+            QueryResult {
+                sql: "SELECT 1".into(),
+                original_duration_us: 100,
+                replay_duration_us: 80,
+                success: true,
+                error: None,
+            },
+            QueryResult {
+                sql: "SELECT 2".into(),
+                original_duration_us: 200,
+                replay_duration_us: 250,
+                success: true,
+                error: None,
+            },
+            QueryResult {
+                sql: "UPDATE t SET x=1".into(),
+                original_duration_us: 300,
+                replay_duration_us: 280,
+                success: true,
+                error: None,
+            },
+            QueryResult {
+                sql: "SELECT 3".into(),
+                original_duration_us: 5000,
+                replay_duration_us: 4500,
+                success: false,
+                error: Some("timeout".into()),
+            },
         ],
     }]
 }

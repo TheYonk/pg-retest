@@ -139,9 +139,7 @@ impl CsvLogCapture {
             let queries: Vec<Query> = entries
                 .iter()
                 .map(|e| {
-                    let offset = (e.log_time - first_time)
-                        .num_microseconds()
-                        .unwrap_or(0) as u64;
+                    let offset = (e.log_time - first_time).num_microseconds().unwrap_or(0) as u64;
                     Query {
                         sql: e.sql.clone(),
                         start_offset_us: offset,
@@ -216,20 +214,16 @@ mod tests {
 
     #[test]
     fn test_parse_duration_statement() {
-        let (dur, sql) = parse_duration_statement(
-            "duration: 1.234 ms  statement: SELECT * FROM users",
-        )
-        .unwrap();
+        let (dur, sql) =
+            parse_duration_statement("duration: 1.234 ms  statement: SELECT * FROM users").unwrap();
         assert_eq!(dur, 1234);
         assert_eq!(sql, "SELECT * FROM users");
     }
 
     #[test]
     fn test_parse_duration_statement_sub_ms() {
-        let (dur, sql) = parse_duration_statement(
-            "duration: 0.045 ms  statement: SELECT 1",
-        )
-        .unwrap();
+        let (dur, sql) =
+            parse_duration_statement("duration: 0.045 ms  statement: SELECT 1").unwrap();
         assert_eq!(dur, 45);
         assert_eq!(sql, "SELECT 1");
     }

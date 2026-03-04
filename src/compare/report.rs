@@ -21,10 +21,26 @@ pub fn print_terminal_report(report: &ComparisonReport) {
             report.total_queries_source,
             report.total_queries_replayed,
         ),
-        make_latency_row("Avg latency", report.source_avg_latency_us, report.replay_avg_latency_us),
-        make_latency_row("P50 latency", report.source_p50_latency_us, report.replay_p50_latency_us),
-        make_latency_row("P95 latency", report.source_p95_latency_us, report.replay_p95_latency_us),
-        make_latency_row("P99 latency", report.source_p99_latency_us, report.replay_p99_latency_us),
+        make_latency_row(
+            "Avg latency",
+            report.source_avg_latency_us,
+            report.replay_avg_latency_us,
+        ),
+        make_latency_row(
+            "P50 latency",
+            report.source_p50_latency_us,
+            report.replay_p50_latency_us,
+        ),
+        make_latency_row(
+            "P95 latency",
+            report.source_p95_latency_us,
+            report.replay_p95_latency_us,
+        ),
+        make_latency_row(
+            "P99 latency",
+            report.source_p99_latency_us,
+            report.replay_p99_latency_us,
+        ),
         (
             "Errors".to_string(),
             "0".to_string(),
@@ -34,12 +50,20 @@ pub fn print_terminal_report(report: &ComparisonReport) {
             } else {
                 "0".to_string()
             },
-            if report.total_errors > 0 { "WARN" } else { "OK" }.to_string(),
+            if report.total_errors > 0 {
+                "WARN"
+            } else {
+                "OK"
+            }
+            .to_string(),
         ),
     ];
 
     for (metric, source, replay, delta, status) in &rows {
-        println!("  {:<16} {:>10} {:>10} {:>10} {:>8}", metric, source, replay, delta, status);
+        println!(
+            "  {:<16} {:>10} {:>10} {:>10} {:>8}",
+            metric, source, replay, delta, status
+        );
     }
     println!();
 

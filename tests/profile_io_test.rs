@@ -1,6 +1,6 @@
-use pg_retest::profile::{Metadata, Query, QueryKind, Session, WorkloadProfile};
-use pg_retest::profile::io;
 use chrono::Utc;
+use pg_retest::profile::io;
+use pg_retest::profile::{Metadata, Query, QueryKind, Session, WorkloadProfile};
 use tempfile::NamedTempFile;
 
 #[test]
@@ -35,14 +35,12 @@ fn test_profile_roundtrip_messagepack() {
                 id: 2,
                 user: "admin".into(),
                 database: "mydb".into(),
-                queries: vec![
-                    Query {
-                        sql: "SELECT count(*) FROM orders".into(),
-                        start_offset_us: 200,
-                        duration_us: 3000,
-                        kind: QueryKind::Select,
-                    },
-                ],
+                queries: vec![Query {
+                    sql: "SELECT count(*) FROM orders".into(),
+                    start_offset_us: 200,
+                    duration_us: 3000,
+                    kind: QueryKind::Select,
+                }],
             },
         ],
         metadata: Metadata {
@@ -73,13 +71,34 @@ fn test_profile_roundtrip_messagepack() {
 
 #[test]
 fn test_query_kind_classification() {
-    assert_eq!(QueryKind::from_sql("SELECT * FROM users"), QueryKind::Select);
-    assert_eq!(QueryKind::from_sql("select count(*) from orders"), QueryKind::Select);
-    assert_eq!(QueryKind::from_sql("INSERT INTO users VALUES (1)"), QueryKind::Insert);
-    assert_eq!(QueryKind::from_sql("UPDATE users SET x=1"), QueryKind::Update);
-    assert_eq!(QueryKind::from_sql("DELETE FROM users WHERE id=1"), QueryKind::Delete);
-    assert_eq!(QueryKind::from_sql("CREATE TABLE foo (id int)"), QueryKind::Ddl);
-    assert_eq!(QueryKind::from_sql("ALTER TABLE foo ADD COLUMN bar text"), QueryKind::Ddl);
+    assert_eq!(
+        QueryKind::from_sql("SELECT * FROM users"),
+        QueryKind::Select
+    );
+    assert_eq!(
+        QueryKind::from_sql("select count(*) from orders"),
+        QueryKind::Select
+    );
+    assert_eq!(
+        QueryKind::from_sql("INSERT INTO users VALUES (1)"),
+        QueryKind::Insert
+    );
+    assert_eq!(
+        QueryKind::from_sql("UPDATE users SET x=1"),
+        QueryKind::Update
+    );
+    assert_eq!(
+        QueryKind::from_sql("DELETE FROM users WHERE id=1"),
+        QueryKind::Delete
+    );
+    assert_eq!(
+        QueryKind::from_sql("CREATE TABLE foo (id int)"),
+        QueryKind::Ddl
+    );
+    assert_eq!(
+        QueryKind::from_sql("ALTER TABLE foo ADD COLUMN bar text"),
+        QueryKind::Ddl
+    );
     assert_eq!(QueryKind::from_sql("DROP TABLE foo"), QueryKind::Ddl);
     assert_eq!(QueryKind::from_sql("VACUUM users"), QueryKind::Other);
     assert_eq!(QueryKind::from_sql("BEGIN"), QueryKind::Other);

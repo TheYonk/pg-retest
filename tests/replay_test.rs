@@ -1,5 +1,5 @@
 use pg_retest::profile::{Query, QueryKind};
-use pg_retest::replay::{QueryResult, ReplayResults, ReplayMode};
+use pg_retest::replay::{QueryResult, ReplayMode, ReplayResults};
 
 #[test]
 fn test_replay_mode_read_only_filters_dml() {
@@ -82,5 +82,7 @@ fn test_replay_results_structure() {
     };
 
     assert_eq!(results.query_results.len(), 2);
-    assert!(results.query_results[0].replay_duration_us < results.query_results[0].original_duration_us);
+    assert!(
+        results.query_results[0].replay_duration_us < results.query_results[0].original_duration_us
+    );
 }

@@ -27,7 +27,8 @@ fn cmd_capture(args: pg_retest::cli::CaptureArgs) -> Result<()> {
     use pg_retest::profile::io;
 
     let capture = CsvLogCapture;
-    let profile = capture.capture_from_file(&args.source_log, &args.source_host, &args.pg_version)?;
+    let profile =
+        capture.capture_from_file(&args.source_log, &args.source_host, &args.pg_version)?;
 
     println!(
         "Captured {} queries across {} sessions",
@@ -41,7 +42,7 @@ fn cmd_capture(args: pg_retest::cli::CaptureArgs) -> Result<()> {
 
 fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
     use pg_retest::profile::io;
-    use pg_retest::replay::{ReplayMode, session::run_replay};
+    use pg_retest::replay::{session::run_replay, ReplayMode};
 
     let profile = io::read_profile(&args.workload)?;
     let mode = if args.read_only {
@@ -52,9 +53,7 @@ fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
 
     println!(
         "Replaying {} sessions ({} queries) against {}",
-        profile.metadata.total_sessions,
-        profile.metadata.total_queries,
-        args.target
+        profile.metadata.total_sessions, profile.metadata.total_queries, args.target
     );
     println!("Mode: {:?}, Speed: {}x", mode, args.speed);
 
