@@ -27,6 +27,9 @@ pub enum Commands {
 
     /// Inspect a workload profile file
     Inspect(InspectArgs),
+
+    /// Run a capture proxy between clients and PostgreSQL
+    Proxy(ProxyArgs),
 }
 
 #[derive(clap::Args)]
@@ -118,4 +121,39 @@ pub struct InspectArgs {
     /// Show workload classification breakdown
     #[arg(long, default_value_t = false)]
     pub classify: bool,
+}
+
+#[derive(clap::Args)]
+pub struct ProxyArgs {
+    /// Address to listen on (e.g., 0.0.0.0:5433)
+    #[arg(long, default_value = "0.0.0.0:5433")]
+    pub listen: String,
+
+    /// Target PostgreSQL address (e.g., localhost:5432)
+    #[arg(long)]
+    pub target: String,
+
+    /// Output workload profile path (.wkl)
+    #[arg(short, long, default_value = "workload.wkl")]
+    pub output: PathBuf,
+
+    /// Maximum server connections in the pool
+    #[arg(long, default_value_t = 100)]
+    pub pool_size: usize,
+
+    /// Timeout waiting for a pool connection (seconds)
+    #[arg(long, default_value_t = 30)]
+    pub pool_timeout: u64,
+
+    /// Mask string and numeric literals in captured SQL (PII protection)
+    #[arg(long, default_value_t = false)]
+    pub mask_values: bool,
+
+    /// Disable workload capture (proxy-only mode)
+    #[arg(long, default_value_t = false)]
+    pub no_capture: bool,
+
+    /// Capture duration (e.g., 60s, 5m). If not set, runs until Ctrl+C.
+    #[arg(long)]
+    pub duration: Option<String>,
 }

@@ -19,6 +19,7 @@ fn main() -> Result<()> {
         Commands::Replay(args) => cmd_replay(args),
         Commands::Compare(args) => cmd_compare(args),
         Commands::Inspect(args) => cmd_inspect(args),
+        Commands::Proxy(args) => cmd_proxy(args),
     }
 }
 
@@ -163,4 +164,35 @@ fn cmd_inspect(args: pg_retest::cli::InspectArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn cmd_proxy(args: pg_retest::cli::ProxyArgs) -> Result<()> {
+    use pg_retest::proxy::{run_proxy, ProxyConfig};
+
+    let duration = args.duration.as_deref().map(parse_duration).transpose()?;
+
+    let config = ProxyConfig {
+        listen_addr: args.listen,
+        target_addr: args.target,
+        output: args.output,
+        pool_size: args.pool_size,
+        pool_timeout_secs: args.pool_timeout,
+        mask_values: args.mask_values,
+        no_capture: args.no_capture,
+        duration,
+    };
+
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(run_proxy(config))
+}
+
+fn parse_duration(s: &str) -> Result<std::time::Duration> {
+    let s = s.trim();
+    if let Some(secs) = s.strip_suffix('s') {
+        Ok(std::time::Duration::from_secs(secs.parse()?))
+    } else if let Some(mins) = s.strip_suffix('m') {
+        Ok(std::time::Duration::from_secs(mins.parse::<u64>()? * 60))
+    } else {
+        Ok(std::time::Duration::from_secs(s.parse()?))
+    }
 }
