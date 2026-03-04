@@ -61,6 +61,22 @@ Key modules:
 - `compare` — Performance comparison logic + terminal/JSON reporting
 - `cli` — Clap derive-based CLI argument structs
 
+## Milestone Status
+
+- **M1: Capture & Replay** — Complete. CSV log capture, async replay, comparison reports.
+- **M2: Scaled Benchmark** — Not started. Workload classification + scaled replay.
+- **M3: CI/CD Integration** — Not started. Automation + pass/fail thresholds.
+- **M4: Cross-Database Capture** — Not started. Oracle/MySQL/MariaDB capture + transform.
+- **M5: AI-Assisted Tuning** — Not started.
+
+## Gotchas
+
+- All `pub mod` declarations go in `src/lib.rs`, not `src/main.rs` — integration tests import from the library crate.
+- PG CSV log timestamps (`2024-03-08 10:00:00.100 UTC`) are not RFC 3339 — the parser has a fallback via `NaiveDateTime`.
+- Capture backends are pluggable: implement parsing in `src/capture/`, the profile format and replay engine don't change.
+- Always run `cargo fmt` after writing code — the formatter's output may differ from hand-written style.
+- `.wkl` files are MessagePack binary. Use `pg-retest inspect file.wkl` to view as JSON.
+
 ## Conventions
 
 - Target PostgreSQL as the primary replay destination for all milestones.
