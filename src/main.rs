@@ -39,8 +39,43 @@ fn cmd_capture(args: pg_retest::cli::CaptureArgs) -> Result<()> {
     Ok(())
 }
 
-fn cmd_replay(_args: pg_retest::cli::ReplayArgs) -> Result<()> {
-    anyhow::bail!("Replay not yet implemented")
+fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
+    use pg_retest::profile::io;
+    use pg_retest::replay::{ReplayMode, session::run_replay};
+
+    let profile = io::read_profile(&args.workload)?;
+    let mode = if args.read_only {
+        ReplayMode::ReadOnly
+    } else {
+        ReplayMode::ReadWrite
+    };
+
+    println!(
+        "Replaying {} sessions ({} queries) against {}",
+        profile.metadata.total_sessions,
+        profile.metadata.total_queries,
+        args.target
+    );
+    println!("Mode: {:?}, Speed: {}x", mode, args.speed);
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let results = rt.block_on(run_replay(&profile, &args.target, mode, args.speed))?;
+
+    let total_replayed: usize = results.iter().map(|r| r.query_results.len()).sum();
+    let total_errors: usize = results
+        .iter()
+        .flat_map(|r| &r.query_results)
+        .filter(|q| !q.success)
+        .count();
+
+    println!("Replay complete: {total_replayed} queries replayed, {total_errors} errors");
+
+    // Save results as MessagePack
+    let bytes = rmp_serde::to_vec(&results)?;
+    std::fs::write(&args.output, bytes)?;
+    println!("Results written to {}", args.output.display());
+
+    Ok(())
 }
 
 fn cmd_compare(_args: pg_retest::cli::CompareArgs) -> Result<()> {
