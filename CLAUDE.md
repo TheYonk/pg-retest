@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - PII may appear in captured queries — the tool must support filtering/masking.
 - Thread simulation fidelity degrades at high scale; benchmark mode accepts this tradeoff.
 
-## Architecture (planned)
+## Architecture
 
 ```
 ┌─────────────┐    ┌──────────────┐    ┌──────────────┐    ┌────────────┐
@@ -39,17 +39,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Development
 
-> **Status: Greenfield** — No build system or tests exist yet. Update this section as tooling is added.
+- **Language:** Rust (2021 edition)
+- **Build:** `cargo build` (debug) / `cargo build --release`
+- **Test all:** `cargo test`
+- **Test single file:** `cargo test --test profile_io_test`
+- **Test single function:** `cargo test --test profile_io_test test_profile_roundtrip_messagepack`
+- **Test lib unit tests:** `cargo test --lib capture::csv_log`
+- **Lint:** `cargo clippy`
+- **Format:** `cargo fmt`
+- **Run:** `cargo run -- <subcommand> [args]`
+- **Verbose logging:** `RUST_LOG=debug cargo run -- -v <subcommand>`
 
-<!--
-TODO: Fill in as project scaffolding is created:
-- Language/runtime:
-- Build command:
-- Test command (all):
-- Test command (single):
-- Lint command:
-- Run command:
--->
+### Crate Structure
+
+The project is both a library (`src/lib.rs`) and binary (`src/main.rs`). Integration tests in `tests/` import from the library crate via `use pg_retest::...`. The binary crate handles CLI dispatch only.
+
+Key modules:
+- `capture::csv_log` — PG CSV log parser (pluggable backend via `CaptureSource` pattern)
+- `profile` — Core data types (`WorkloadProfile`, `Session`, `Query`) + MessagePack I/O
+- `replay::session` — Async per-session replay engine (Tokio + tokio-postgres)
+- `compare` — Performance comparison logic + terminal/JSON reporting
+- `cli` — Clap derive-based CLI argument structs
 
 ## Conventions
 
