@@ -1,0 +1,48 @@
+/usr/sbin/mysqld, Version: 8.0.36 (MySQL Community Server - GPL). started with:
+Tcp port: 3306  Unix socket: /var/run/mysqld/mysqld.sock
+Time                 Id Command    Argument
+# Time: 2024-03-08T10:00:00.100000Z
+# User@Host: app_user[app_user] @ localhost []  Id:    42
+# Query_time: 0.001234  Lock_time: 0.000100 Rows_sent: 1  Rows_examined: 100
+SET timestamp=1709892000;
+SELECT * FROM users WHERE id = 1;
+# Time: 2024-03-08T10:00:00.200000Z
+# User@Host: app_user[app_user] @ localhost []  Id:    42
+# Query_time: 0.002500  Lock_time: 0.000050 Rows_sent: 10  Rows_examined: 50
+SET timestamp=1709892000;
+SELECT `name`, `email` FROM `users` WHERE `active` = 1 LIMIT 10, 20;
+# Time: 2024-03-08T10:00:00.500000Z
+# User@Host: admin[admin] @ 192.168.1.10 []  Id:    99
+# Query_time: 0.010000  Lock_time: 0.000000 Rows_sent: 0  Rows_examined: 0
+SET timestamp=1709892000;
+SHOW VARIABLES LIKE 'version';
+# Time: 2024-03-08T10:00:01.000000Z
+# User@Host: app_user[app_user] @ localhost []  Id:    42
+# Query_time: 0.000500  Lock_time: 0.000010 Rows_sent: 0  Rows_examined: 1
+SET timestamp=1709892001;
+INSERT INTO orders (user_id, total) VALUES (1, 99.99);
+# Time: 2024-03-08T10:00:01.500000Z
+# User@Host: batch[batch] @ localhost []  Id:    55
+# Query_time: 0.050000  Lock_time: 0.001000 Rows_sent: 5000  Rows_examined: 100000
+SET timestamp=1709892001;
+SELECT o.id, o.total, u.name
+FROM orders o
+JOIN users u ON o.user_id = u.id
+WHERE o.created_at > '2024-01-01'
+ORDER BY o.total DESC
+LIMIT 5000;
+# Time: 2024-03-08T10:00:02.000000Z
+# User@Host: app_user[app_user] @ localhost []  Id:    42
+# Query_time: 0.000100  Lock_time: 0.000000 Rows_sent: 0  Rows_examined: 0
+SET timestamp=1709892002;
+BEGIN;
+# Time: 2024-03-08T10:00:02.100000Z
+# User@Host: app_user[app_user] @ localhost []  Id:    42
+# Query_time: 0.001000  Lock_time: 0.000100 Rows_sent: 0  Rows_examined: 1
+SET timestamp=1709892002;
+UPDATE users SET last_login = NOW() WHERE id = 1;
+# Time: 2024-03-08T10:00:02.200000Z
+# User@Host: app_user[app_user] @ localhost []  Id:    42
+# Query_time: 0.000050  Lock_time: 0.000000 Rows_sent: 0  Rows_examined: 0
+SET timestamp=1709892002;
+COMMIT;
