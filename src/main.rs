@@ -20,6 +20,7 @@ fn main() -> Result<()> {
         Commands::Compare(args) => cmd_compare(args),
         Commands::Inspect(args) => cmd_inspect(args),
         Commands::Proxy(args) => cmd_proxy(args),
+        Commands::Run(args) => cmd_run(args),
     }
 }
 
@@ -184,6 +185,27 @@ fn cmd_proxy(args: pg_retest::cli::ProxyArgs) -> Result<()> {
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(run_proxy(config))
+}
+
+fn cmd_run(args: pg_retest::cli::RunArgs) -> Result<()> {
+    use pg_retest::config::load_config;
+    use pg_retest::pipeline;
+
+    let config = match load_config(&args.config) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Config error: {e:#}");
+            std::process::exit(pipeline::EXIT_CONFIG_ERROR);
+        }
+    };
+
+    let result = pipeline::run_pipeline(&config);
+
+    if result.exit_code != 0 {
+        std::process::exit(result.exit_code);
+    }
+
+    Ok(())
 }
 
 fn parse_duration(s: &str) -> Result<std::time::Duration> {

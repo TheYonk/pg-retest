@@ -30,6 +30,9 @@ pub enum Commands {
 
     /// Run a capture proxy between clients and PostgreSQL
     Proxy(ProxyArgs),
+
+    /// Run full CI/CD pipeline (capture → provision → replay → compare)
+    Run(RunArgs),
 }
 
 #[derive(clap::Args)]
@@ -156,4 +159,11 @@ pub struct ProxyArgs {
     /// Capture duration (e.g., 60s, 5m). If not set, runs until Ctrl+C.
     #[arg(long)]
     pub duration: Option<String>,
+}
+
+#[derive(clap::Args)]
+pub struct RunArgs {
+    /// Path to pipeline config file (.toml)
+    #[arg(long, default_value = ".pg-retest.toml")]
+    pub config: PathBuf,
 }
