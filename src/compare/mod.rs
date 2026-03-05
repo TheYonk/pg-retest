@@ -1,5 +1,6 @@
 pub mod capacity;
 pub mod report;
+pub mod threshold;
 
 use serde::{Deserialize, Serialize};
 
