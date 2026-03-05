@@ -33,11 +33,9 @@ impl SqlTransformer for SkipMysqlInternals {
             || upper.starts_with("DESC ")
             || upper.starts_with("USE ")
         {
+            let preview: String = sql.trim().chars().take(40).collect();
             TransformResult::Skipped {
-                reason: format!(
-                    "MySQL-specific command: {}",
-                    &sql.trim()[..sql.trim().len().min(40)]
-                ),
+                reason: format!("MySQL-specific command: {preview}"),
             }
         } else {
             TransformResult::Unchanged
