@@ -139,15 +139,35 @@ fn load_or_capture_workload(config: &PipelineConfig) -> Result<WorkloadProfile> 
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No workload or source_log specified"))?;
 
-    info!("Capturing from {}", source_log.display());
-    let capture = CsvLogCapture;
-    let mut profile = capture
-        .capture_from_file(
-            source_log,
-            capture_cfg.source_host.as_deref().unwrap_or("unknown"),
-            capture_cfg.pg_version.as_deref().unwrap_or("unknown"),
-        )
-        .map_err(|e| anyhow::anyhow!("Capture error: {e}"))?;
+    info!(
+        "Capturing from {} (type: {})",
+        source_log.display(),
+        capture_cfg.source_type
+    );
+    let mut profile = match capture_cfg.source_type.as_str() {
+        "pg-csv" => {
+            let capture = CsvLogCapture;
+            capture
+                .capture_from_file(
+                    source_log,
+                    capture_cfg.source_host.as_deref().unwrap_or("unknown"),
+                    capture_cfg.pg_version.as_deref().unwrap_or("unknown"),
+                )
+                .map_err(|e| anyhow::anyhow!("Capture error: {e}"))?
+        }
+        "mysql-slow" => {
+            use crate::capture::mysql_slow::MysqlSlowLogCapture;
+            let capture = MysqlSlowLogCapture;
+            capture
+                .capture_from_file(
+                    source_log,
+                    capture_cfg.source_host.as_deref().unwrap_or("unknown"),
+                    true, // always transform MySQL→PG
+                )
+                .map_err(|e| anyhow::anyhow!("Capture error: {e}"))?
+        }
+        other => anyhow::bail!("Capture error: unknown source_type: {other}"),
+    };
 
     if capture_cfg.mask_values {
         for session in &mut profile.sessions {

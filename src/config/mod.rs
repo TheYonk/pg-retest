@@ -21,6 +21,9 @@ pub struct CaptureConfig {
     pub source_log: Option<PathBuf>,
     pub source_host: Option<String>,
     pub pg_version: Option<String>,
+    /// Source type: "pg-csv" (default), "mysql-slow"
+    #[serde(default = "default_source_type")]
+    pub source_type: String,
     #[serde(default)]
     pub mask_values: bool,
 }
@@ -66,6 +69,9 @@ pub struct OutputConfig {
     pub junit_xml: Option<PathBuf>,
 }
 
+fn default_source_type() -> String {
+    "pg-csv".to_string()
+}
 fn default_speed() -> f64 {
     1.0
 }
@@ -210,5 +216,34 @@ speed = 2.0
     fn test_load_config_file_not_found() {
         let err = load_config(Path::new("/nonexistent/config.toml")).unwrap_err();
         assert!(err.to_string().contains("Failed to read"));
+    }
+
+    #[test]
+    fn test_parse_mysql_config() {
+        let toml = r#"
+[capture]
+source_log = "mysql_slow.log"
+source_type = "mysql-slow"
+source_host = "mysql-prod"
+
+[replay]
+target = "host=localhost dbname=test"
+read_only = true
+"#;
+        let config: PipelineConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.capture.as_ref().unwrap().source_type, "mysql-slow");
+    }
+
+    #[test]
+    fn test_default_source_type_is_pg_csv() {
+        let toml = r#"
+[capture]
+source_log = "pg_log.csv"
+
+[replay]
+target = "host=localhost"
+"#;
+        let config: PipelineConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.capture.as_ref().unwrap().source_type, "pg-csv");
     }
 }

@@ -13,6 +13,7 @@ fn minimal_config(workload_path: &str, target: &str) -> PipelineConfig {
             source_log: None,
             source_host: None,
             pg_version: None,
+            source_type: "pg-csv".to_string(),
             mask_values: false,
         }),
         provision: None,
@@ -36,6 +37,7 @@ fn test_pipeline_config_validation_no_workload() {
             source_log: None,
             source_host: None,
             pg_version: None,
+            source_type: "pg-csv".to_string(),
             mask_values: false,
         }),
         provision: None,
@@ -146,6 +148,7 @@ fn test_pipeline_e2e_with_docker() {
             source_log: Some(PathBuf::from("tests/fixtures/sample_pg.csv")),
             source_host: Some("test-host".into()),
             pg_version: Some("16".into()),
+            source_type: "pg-csv".to_string(),
             mask_values: false,
         }),
         provision: Some(ProvisionConfig {
