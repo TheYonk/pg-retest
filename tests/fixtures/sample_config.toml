@@ -1,0 +1,30 @@
+# Example pg-retest CI/CD pipeline config
+# Usage: pg-retest run --config .pg-retest.toml
+
+[capture]
+# Option A: Use an existing workload file
+# workload = "workload.wkl"
+
+# Option B: Capture from PG CSV log
+source_log = "tests/fixtures/sample_pg.csv"
+source_host = "prod-db-01"
+pg_version = "16.2"
+mask_values = false
+
+[replay]
+# Target connection string (when not using Docker provisioning)
+target = "host=127.0.0.1 port=5432 user=postgres dbname=test"
+speed = 0           # 0 = max speed
+read_only = true
+scale = 1
+
+[thresholds]
+p95_max_ms = 100.0
+p99_max_ms = 500.0
+error_rate_max_pct = 5.0
+regression_max_count = 10
+regression_threshold_pct = 20.0
+
+[output]
+json_report = "report.json"
+junit_xml = "results.xml"

@@ -123,3 +123,76 @@ fn test_pipeline_threshold_evaluation() {
     // The comparison report should still be produced
     assert!(result.report.is_some());
 }
+
+/// Full end-to-end test with Docker provisioning.
+/// Requires Docker to be running. Skipped if Docker is not available.
+#[test]
+fn test_pipeline_e2e_with_docker() {
+    // Skip if Docker is not available
+    let docker_check = std::process::Command::new("docker").arg("version").output();
+    if docker_check.is_err() || !docker_check.unwrap().status.success() {
+        eprintln!("Skipping Docker e2e test: Docker not available");
+        return;
+    }
+
+    use pg_retest::config::ProvisionConfig;
+
+    let json_file = NamedTempFile::with_suffix(".json").unwrap();
+    let junit_file = NamedTempFile::with_suffix(".xml").unwrap();
+
+    let config = PipelineConfig {
+        capture: Some(CaptureConfig {
+            workload: None,
+            source_log: Some(PathBuf::from("tests/fixtures/sample_pg.csv")),
+            source_host: Some("test-host".into()),
+            pg_version: Some("16".into()),
+            mask_values: false,
+        }),
+        provision: Some(ProvisionConfig {
+            backend: "docker".into(),
+            image: Some("postgres:16".into()),
+            restore_from: None,
+            connection_string: None,
+            port: None,
+        }),
+        replay: ReplayConfig {
+            speed: 0.0,
+            read_only: true,
+            scale: 1,
+            stagger_ms: 0,
+            target: None, // use provisioned DB
+        },
+        thresholds: Some(ThresholdConfig {
+            p95_max_ms: Some(500.0),
+            p99_max_ms: Some(2000.0),
+            error_rate_max_pct: Some(50.0), // generous for test
+            regression_max_count: Some(100),
+            regression_threshold_pct: 20.0,
+        }),
+        output: Some(OutputConfig {
+            json_report: Some(json_file.path().to_path_buf()),
+            junit_xml: Some(junit_file.path().to_path_buf()),
+        }),
+    };
+
+    let result = run_pipeline(&config);
+
+    // Should complete (pass or threshold violation, not crash)
+    assert!(
+        result.exit_code == pipeline::EXIT_PASS
+            || result.exit_code == pipeline::EXIT_THRESHOLD_VIOLATION,
+        "Expected PASS or THRESHOLD_VIOLATION, got exit code {}",
+        result.exit_code
+    );
+
+    // JSON report should exist
+    assert!(json_file.path().exists());
+    let json_content = std::fs::read_to_string(json_file.path()).unwrap();
+    assert!(json_content.contains("total_queries"));
+
+    // JUnit XML should exist
+    assert!(junit_file.path().exists());
+    let xml_content = std::fs::read_to_string(junit_file.path()).unwrap();
+    assert!(xml_content.contains("<testsuites"));
+    assert!(xml_content.contains("pg-retest"));
+}
