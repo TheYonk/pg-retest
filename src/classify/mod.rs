@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::profile::{QueryKind, Session, WorkloadProfile};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum WorkloadClass {
     Analytical,
     Transactional,
