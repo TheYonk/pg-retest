@@ -1,3 +1,4 @@
+pub mod analyze;
 pub mod mysql_to_pg;
 pub mod plan;
 
