@@ -22,9 +22,17 @@ pub async fn handle_connection(
     session_id: u64,
     capture_tx: mpsc::UnboundedSender<CaptureEvent>,
     no_capture: bool,
+    metrics_tx: Option<mpsc::UnboundedSender<CaptureEvent>>,
 ) {
-    if let Err(e) =
-        handle_connection_inner(client_stream, pool, session_id, capture_tx, no_capture).await
+    if let Err(e) = handle_connection_inner(
+        client_stream,
+        pool,
+        session_id,
+        capture_tx,
+        no_capture,
+        metrics_tx,
+    )
+    .await
     {
         debug!("Session {session_id} ended: {e}");
     }
@@ -36,6 +44,7 @@ async fn handle_connection_inner(
     session_id: u64,
     capture_tx: mpsc::UnboundedSender<CaptureEvent>,
     no_capture: bool,
+    metrics_tx: Option<mpsc::UnboundedSender<CaptureEvent>>,
 ) -> Result<()> {
     // ── Phase 1: Startup ────────────────────────────────────────────
     // Read the first message from client (no type byte — startup message)
@@ -89,12 +98,16 @@ async fn handle_connection_inner(
 
     // Send capture session start
     if !no_capture {
-        let _ = capture_tx.send(CaptureEvent::SessionStart {
+        let event = CaptureEvent::SessionStart {
             session_id,
             user,
             database,
             timestamp: Instant::now(),
-        });
+        };
+        if let Some(ref mtx) = metrics_tx {
+            let _ = mtx.send(event.clone());
+        }
+        let _ = capture_tx.send(event);
     }
 
     // ── Phase 4: Bidirectional relay with capture ───────────────────
@@ -107,6 +120,7 @@ async fn handle_connection_inner(
     let server_write = BufWriter::new(server_write);
 
     let capture_tx2 = capture_tx.clone();
+    let metrics_tx2 = metrics_tx.clone();
 
     // Shared state for prepared statement tracking
     let stmt_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>> =
@@ -115,6 +129,7 @@ async fn handle_connection_inner(
     // Client → Server relay
     let c2s = tokio::spawn({
         let capture_tx = capture_tx.clone();
+        let metrics_tx = metrics_tx.clone();
         let stmt_cache = stmt_cache.clone();
         async move {
             relay_client_to_server(
@@ -124,6 +139,7 @@ async fn handle_connection_inner(
                 capture_tx,
                 stmt_cache,
                 no_capture,
+                metrics_tx,
             )
             .await
         }
@@ -137,6 +153,7 @@ async fn handle_connection_inner(
             session_id,
             capture_tx2,
             no_capture,
+            metrics_tx2,
         )
         .await
     });
@@ -216,6 +233,7 @@ async fn relay_client_to_server(
     capture_tx: mpsc::UnboundedSender<CaptureEvent>,
     stmt_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
     no_capture: bool,
+    metrics_tx: Option<mpsc::UnboundedSender<CaptureEvent>>,
 ) -> Result<()> {
     loop {
         let msg = match protocol::read_message(&mut client).await? {
@@ -228,11 +246,15 @@ async fn relay_client_to_server(
                 b'Q' => {
                     // Simple query
                     if let Some(sql) = extract_query_sql(&msg) {
-                        let _ = capture_tx.send(CaptureEvent::QueryStart {
+                        let event = CaptureEvent::QueryStart {
                             session_id,
                             sql,
                             timestamp: Instant::now(),
-                        });
+                        };
+                        if let Some(ref mtx) = metrics_tx {
+                            let _ = mtx.send(event.clone());
+                        }
+                        let _ = capture_tx.send(event);
                     }
                 }
                 b'P' => {
@@ -249,11 +271,15 @@ async fn relay_client_to_server(
                         if let Some(sql_template) = cache.get(&bind.statement_name) {
                             let params = format_bind_params(&bind.parameters);
                             let sql = inline_bind_params(sql_template, &params);
-                            let _ = capture_tx.send(CaptureEvent::QueryStart {
+                            let event = CaptureEvent::QueryStart {
                                 session_id,
                                 sql,
                                 timestamp: Instant::now(),
-                            });
+                            };
+                            if let Some(ref mtx) = metrics_tx {
+                                let _ = mtx.send(event.clone());
+                            }
+                            let _ = capture_tx.send(event);
                         }
                     }
                 }
@@ -261,7 +287,11 @@ async fn relay_client_to_server(
                     // Terminate
                     protocol::write_message(&mut server, &msg).await?;
                     server.flush().await?;
-                    let _ = capture_tx.send(CaptureEvent::SessionEnd { session_id });
+                    let event = CaptureEvent::SessionEnd { session_id };
+                    if let Some(ref mtx) = metrics_tx {
+                        let _ = mtx.send(event.clone());
+                    }
+                    let _ = capture_tx.send(event);
                     break;
                 }
                 _ => {}
@@ -285,6 +315,7 @@ async fn relay_server_to_client(
     session_id: u64,
     capture_tx: mpsc::UnboundedSender<CaptureEvent>,
     no_capture: bool,
+    metrics_tx: Option<mpsc::UnboundedSender<CaptureEvent>>,
 ) -> Result<()> {
     loop {
         let msg = match protocol::read_message(&mut server).await? {
@@ -296,19 +327,27 @@ async fn relay_server_to_client(
             match msg.msg_type {
                 b'C' => {
                     // CommandComplete — query finished
-                    let _ = capture_tx.send(CaptureEvent::QueryComplete {
+                    let event = CaptureEvent::QueryComplete {
                         session_id,
                         timestamp: Instant::now(),
-                    });
+                    };
+                    if let Some(ref mtx) = metrics_tx {
+                        let _ = mtx.send(event.clone());
+                    }
+                    let _ = capture_tx.send(event);
                 }
                 b'E' => {
                     // ErrorResponse
                     if let Some(err_msg) = extract_error_message(&msg) {
-                        let _ = capture_tx.send(CaptureEvent::QueryError {
+                        let event = CaptureEvent::QueryError {
                             session_id,
                             message: err_msg,
                             timestamp: Instant::now(),
-                        });
+                        };
+                        if let Some(ref mtx) = metrics_tx {
+                            let _ = mtx.send(event.clone());
+                        }
+                        let _ = capture_tx.send(event);
                     }
                 }
                 _ => {}

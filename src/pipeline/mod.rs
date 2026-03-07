@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -5,6 +6,7 @@ use tracing::info;
 
 use crate::capture::csv_log::CsvLogCapture;
 use crate::capture::masking::mask_sql_literals;
+use crate::classify::WorkloadClass;
 use crate::compare::junit::write_junit_xml;
 use crate::compare::report;
 use crate::compare::threshold::{all_passed, evaluate_thresholds};
@@ -13,7 +15,7 @@ use crate::config::PipelineConfig;
 use crate::profile::io;
 use crate::profile::WorkloadProfile;
 use crate::provision::{self, ProvisionedDb};
-use crate::replay::scaling::{check_write_safety, scale_sessions};
+use crate::replay::scaling::{check_write_safety, scale_sessions, scale_sessions_by_class};
 use crate::replay::session::run_replay;
 use crate::replay::ReplayMode;
 
@@ -54,6 +56,13 @@ fn run_pipeline_inner(config: &PipelineConfig) -> Result<PipelineResult> {
         "Workload: {} sessions, {} queries",
         profile.metadata.total_sessions, profile.metadata.total_queries
     );
+
+    // ── Check for A/B variant mode ──────────────────────────────────
+    if let Some(ref variants) = config.variants {
+        if variants.len() >= 2 {
+            return run_ab_pipeline(config, &profile, variants, pipeline_start);
+        }
+    }
 
     // ── Step 2: Provision target database ───────────────────────────
     let provisioned = provision_target(config)?;
@@ -227,8 +236,23 @@ fn run_replay_step(
         ReplayMode::ReadWrite
     };
 
-    // Scale if requested
-    let replay_profile = if config.replay.scale > 1 {
+    // Scale if requested (per-category takes priority over uniform)
+    let replay_profile = if let Some(class_scales) = build_class_scales(&config.replay) {
+        if let Some(warning) = check_write_safety(profile) {
+            eprintln!("{warning}");
+        }
+        let scaled = scale_sessions_by_class(profile, &class_scales, config.replay.stagger_ms);
+        let mut p = profile.clone();
+        p.sessions = scaled;
+        p.metadata.total_sessions = p.sessions.len() as u64;
+        p.metadata.total_queries = p.sessions.iter().map(|s| s.queries.len() as u64).sum();
+        info!(
+            "Per-category scaled: {} -> {} sessions",
+            profile.sessions.len(),
+            p.metadata.total_sessions,
+        );
+        p
+    } else if config.replay.scale > 1 {
         if let Some(warning) = check_write_safety(profile) {
             eprintln!("{warning}");
         }
@@ -282,6 +306,92 @@ fn write_output_reports(
         }
     }
     Ok(())
+}
+
+/// Run the pipeline in A/B variant mode.
+fn run_ab_pipeline(
+    config: &PipelineConfig,
+    profile: &WorkloadProfile,
+    variants: &[crate::config::VariantConfig],
+    pipeline_start: Instant,
+) -> Result<PipelineResult> {
+    use crate::compare::ab::{
+        compute_ab_comparison, print_ab_report, write_ab_json, VariantResult,
+    };
+
+    let mode = if config.replay.read_only {
+        ReplayMode::ReadOnly
+    } else {
+        ReplayMode::ReadWrite
+    };
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let mut variant_results = Vec::new();
+
+    for variant in variants {
+        info!(
+            "A/B: replaying variant '{}' against {}",
+            variant.label, variant.target
+        );
+        let results = rt
+            .block_on(run_replay(
+                profile,
+                &variant.target,
+                mode,
+                config.replay.speed,
+            ))
+            .map_err(|e| anyhow::anyhow!("Replay error for '{}': {e}", variant.label))?;
+        variant_results.push(VariantResult::from_results(variant.label.clone(), results));
+    }
+
+    let threshold_pct = config
+        .thresholds
+        .as_ref()
+        .map_or(20.0, |t| t.regression_threshold_pct);
+    let report = compute_ab_comparison(variant_results, threshold_pct);
+    print_ab_report(&report);
+
+    // Write output reports if configured
+    if let Some(ref output) = config.output {
+        if let Some(ref json_path) = output.json_report {
+            write_ab_json(json_path, &report)?;
+            info!("A/B JSON report: {}", json_path.display());
+        }
+    }
+
+    let elapsed_secs = pipeline_start.elapsed().as_secs_f64();
+    info!("A/B pipeline completed in {elapsed_secs:.1}s");
+
+    Ok(PipelineResult {
+        exit_code: EXIT_PASS,
+        report: None, // A/B mode doesn't produce a standard ComparisonReport
+    })
+}
+
+/// Build per-category scale factors from replay config.
+/// Returns `None` if no per-category fields are set.
+fn build_class_scales(replay: &crate::config::ReplayConfig) -> Option<HashMap<WorkloadClass, u32>> {
+    let has_any = replay.scale_analytical.is_some()
+        || replay.scale_transactional.is_some()
+        || replay.scale_mixed.is_some()
+        || replay.scale_bulk.is_some();
+
+    if !has_any {
+        return None;
+    }
+
+    let mut scales = HashMap::new();
+    scales.insert(
+        WorkloadClass::Analytical,
+        replay.scale_analytical.unwrap_or(1),
+    );
+    scales.insert(
+        WorkloadClass::Transactional,
+        replay.scale_transactional.unwrap_or(1),
+    );
+    scales.insert(WorkloadClass::Mixed, replay.scale_mixed.unwrap_or(1));
+    scales.insert(WorkloadClass::Bulk, replay.scale_bulk.unwrap_or(1));
+    Some(scales)
 }
 
 /// Classify an error into the appropriate exit code based on its message.

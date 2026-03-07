@@ -115,7 +115,7 @@ pub fn scale_sessions_by_class(
             continue; // 0 already excluded, 1 already added
         }
 
-        for copy_index in 1..scale as u64 {
+        for _copy_index in 1..scale as u64 {
             global_copy += 1;
             let offset = global_copy * stagger_us;
 

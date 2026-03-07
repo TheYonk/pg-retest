@@ -9,7 +9,7 @@ use crate::capture::masking::mask_sql_literals;
 use crate::profile::{self, Metadata, Query, QueryKind, Session, WorkloadProfile};
 
 /// Events sent from relay tasks to the capture collector.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CaptureEvent {
     SessionStart {
         session_id: u64,

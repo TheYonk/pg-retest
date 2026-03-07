@@ -132,15 +132,17 @@ fn validate_config(config: &PipelineConfig) -> Result<()> {
         );
     }
 
-    // Must have a way to connect to target
-    let has_target = config.replay.target.is_some()
+    // Must have a way to connect to target (unless using A/B variants)
+    let has_variants = config.variants.as_ref().is_some_and(|v| v.len() >= 2);
+    let has_target = has_variants
+        || config.replay.target.is_some()
         || config
             .provision
             .as_ref()
             .is_some_and(|p| p.connection_string.is_some() || p.backend == "docker");
     if !has_target {
         anyhow::bail!(
-            "Config must specify [replay].target, [provision].connection_string, or [provision].backend = \"docker\""
+            "Config must specify [replay].target, [[variants]], [provision].connection_string, or [provision].backend = \"docker\""
         );
     }
 
@@ -351,9 +353,11 @@ speed = 1.0
 read_only = true
 "#;
         let config: PipelineConfig = toml::from_str(toml).unwrap();
-        let variants = config.variants.unwrap();
+        let variants = config.variants.as_ref().unwrap();
         assert_eq!(variants.len(), 2);
         assert_eq!(variants[0].label, "pg16-default");
         assert_eq!(variants[1].target, "host=db2 dbname=app");
+        // Variants satisfy the target requirement — validation should pass
+        assert!(validate_config(&config).is_ok());
     }
 }

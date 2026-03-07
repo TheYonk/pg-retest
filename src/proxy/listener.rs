@@ -16,6 +16,7 @@ pub async fn run_listener(
     pool: Arc<SessionPool>,
     capture_tx: mpsc::UnboundedSender<CaptureEvent>,
     no_capture: bool,
+    metrics_tx: Option<mpsc::UnboundedSender<CaptureEvent>>,
 ) -> Result<()> {
     let session_counter = AtomicU64::new(1);
     let addr = listener.local_addr()?;
@@ -26,11 +27,20 @@ pub async fn run_listener(
         let session_id = session_counter.fetch_add(1, Ordering::Relaxed);
         let pool = pool.clone();
         let capture_tx = capture_tx.clone();
+        let metrics_tx = metrics_tx.clone();
 
         info!("Session {session_id}: accepted connection from {peer_addr}");
 
         tokio::spawn(async move {
-            handle_connection(client_stream, pool, session_id, capture_tx, no_capture).await;
+            handle_connection(
+                client_stream,
+                pool,
+                session_id,
+                capture_tx,
+                no_capture,
+                metrics_tx,
+            )
+            .await;
         });
     }
 }
