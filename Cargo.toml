@@ -31,6 +31,5 @@ tracing = "0.1"
 tempfile = "3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
-
-[dev-dependencies]
+async-trait = "0.1"
 reqwest = { version = "0.12", features = ["json"] }

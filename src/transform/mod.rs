@@ -2,6 +2,7 @@ pub mod analyze;
 pub mod engine;
 pub mod mysql_to_pg;
 pub mod plan;
+pub mod planner;
 
 /// Result of transforming a single SQL statement.
 #[derive(Debug, Clone, PartialEq)]
