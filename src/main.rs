@@ -24,6 +24,7 @@ fn main() -> Result<()> {
         Commands::AB(args) => cmd_ab(args),
         Commands::Web(args) => cmd_web(args),
         Commands::Transform(args) => cmd_transform(args),
+        Commands::Tune(args) => cmd_tune(args),
     }
 }
 
@@ -486,6 +487,34 @@ fn cmd_transform(args: pg_retest::cli::TransformArgs) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn cmd_tune(args: pg_retest::cli::TuneArgs) -> Result<()> {
+    let config = pg_retest::tuner::types::TuningConfig {
+        workload_path: args.workload,
+        target: args.target,
+        provider: args.provider,
+        api_key: args.api_key,
+        api_url: args.api_url,
+        model: args.model,
+        max_iterations: args.max_iterations,
+        hint: args.hint,
+        apply: args.apply,
+        force: args.force,
+        speed: args.speed,
+        read_only: args.read_only,
+    };
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let report = rt.block_on(pg_retest::tuner::run_tuning(&config))?;
+
+    if let Some(json_path) = args.json {
+        let json = serde_json::to_string_pretty(&report)?;
+        std::fs::write(&json_path, json)?;
+        println!("\n  Report written to {}", json_path.display());
+    }
+
+    Ok(())
 }
 
 fn parse_duration(s: &str) -> Result<std::time::Duration> {

@@ -43,6 +43,9 @@ pub enum Commands {
 
     /// Transform a workload using AI-generated plans
     Transform(TransformArgs),
+
+    /// Run AI-assisted database tuning
+    Tune(TuneArgs),
 }
 
 #[derive(clap::Args)]
@@ -320,4 +323,59 @@ pub enum TransformAction {
         #[arg(long)]
         seed: Option<u64>,
     },
+}
+
+#[derive(clap::Args)]
+pub struct TuneArgs {
+    /// Path to workload profile (.wkl)
+    #[arg(long)]
+    pub workload: PathBuf,
+
+    /// Target PostgreSQL connection string
+    #[arg(long)]
+    pub target: String,
+
+    /// LLM provider: claude, openai, ollama
+    #[arg(long, default_value = "claude")]
+    pub provider: String,
+
+    /// API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var)
+    #[arg(long)]
+    pub api_key: Option<String>,
+
+    /// Override API URL
+    #[arg(long)]
+    pub api_url: Option<String>,
+
+    /// Override model name
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Maximum tuning iterations
+    #[arg(long, default_value_t = 3)]
+    pub max_iterations: u32,
+
+    /// Natural language hint for the LLM
+    #[arg(long)]
+    pub hint: Option<String>,
+
+    /// Apply recommendations (default is dry-run)
+    #[arg(long, default_value_t = false)]
+    pub apply: bool,
+
+    /// Allow targeting production-looking hostnames
+    #[arg(long, default_value_t = false)]
+    pub force: bool,
+
+    /// Output JSON report path
+    #[arg(long)]
+    pub json: Option<PathBuf>,
+
+    /// Replay speed multiplier
+    #[arg(long, default_value_t = 1.0)]
+    pub speed: f64,
+
+    /// Replay only SELECT queries
+    #[arg(long, default_value_t = false)]
+    pub read_only: bool,
 }
