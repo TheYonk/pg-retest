@@ -6,21 +6,31 @@ description = "Capture, replay, and compare PostgreSQL workloads"
 
 [dependencies]
 anyhow = "1"
+axum = { version = "0.8", features = ["ws", "multipart"] }
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 csv = "1"
+futures-util = "0.3"
+mime_guess = "2"
+rand = "0.8"
 rmp-serde = "1"
 regex = "1"
+rust-embed = "8"
+rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tabled = "0.17"
+tokio-util = { version = "0.7", features = ["rt"] }
 toml = "0.8"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
 tracing = "0.1"
 tempfile = "3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+reqwest = { version = "0.12", features = ["json"] }
