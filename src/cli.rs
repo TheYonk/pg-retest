@@ -280,11 +280,11 @@ pub enum TransformAction {
         #[arg(long)]
         prompt: String,
 
-        /// LLM provider: claude, openai, ollama
+        /// LLM provider: claude, openai, gemini, ollama
         #[arg(long, default_value = "claude")]
         provider: String,
 
-        /// API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var)
+        /// API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY env var)
         #[arg(long)]
         api_key: Option<String>,
 
@@ -335,11 +335,11 @@ pub struct TuneArgs {
     #[arg(long)]
     pub target: String,
 
-    /// LLM provider: claude, openai, ollama
+    /// LLM provider: claude, openai, gemini, ollama
     #[arg(long, default_value = "claude")]
     pub provider: String,
 
-    /// API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY env var)
+    /// API key (or set ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY env var)
     #[arg(long)]
     pub api_key: Option<String>,
 

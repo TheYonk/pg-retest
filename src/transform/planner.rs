@@ -21,6 +21,7 @@ pub trait LlmPlanner: Send + Sync {
 pub enum LlmProvider {
     Claude,
     OpenAi,
+    Gemini,
     Ollama,
 }
 
@@ -31,9 +32,10 @@ impl std::str::FromStr for LlmProvider {
         match s.to_lowercase().as_str() {
             "claude" | "anthropic" => Ok(Self::Claude),
             "openai" | "gpt" => Ok(Self::OpenAi),
+            "gemini" | "google" => Ok(Self::Gemini),
             "ollama" | "local" => Ok(Self::Ollama),
             other => {
-                anyhow::bail!("Unknown LLM provider: {other}. Supported: claude, openai, ollama")
+                anyhow::bail!("Unknown LLM provider: {other}. Supported: claude, openai, gemini, ollama")
             }
         }
     }
@@ -65,6 +67,15 @@ pub fn create_planner(config: PlannerConfig) -> Box<dyn LlmPlanner> {
                 .api_url
                 .unwrap_or_else(|| "https://api.openai.com".into()),
             model: config.model.unwrap_or_else(|| "gpt-4o".into()),
+        }),
+        LlmProvider::Gemini => Box::new(GeminiPlanner {
+            api_key: config.api_key,
+            api_url: config
+                .api_url
+                .unwrap_or_else(|| "https://generativelanguage.googleapis.com".into()),
+            model: config
+                .model
+                .unwrap_or_else(|| "gemini-2.5-flash".into()),
         }),
         LlmProvider::Ollama => Box::new(OllamaPlanner {
             api_url: config
@@ -304,6 +315,86 @@ impl LlmPlanner for OpenAiPlanner {
     }
 }
 
+// -- Gemini Provider ----------------------------------------------------------
+
+struct GeminiPlanner {
+    api_key: String,
+    api_url: String,
+    model: String,
+}
+
+#[async_trait::async_trait]
+impl LlmPlanner for GeminiPlanner {
+    async fn generate_plan(
+        &self,
+        analysis: &WorkloadAnalysis,
+        prompt: &str,
+    ) -> Result<TransformPlan> {
+        let client = reqwest::Client::new();
+        let schema = tool_schema();
+
+        let body = json!({
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{ "text": format!("{}\n\n{}", build_system_prompt(), build_user_message(analysis, prompt)) }]
+                }
+            ],
+            "tools": [{
+                "functionDeclarations": [{
+                    "name": schema["name"],
+                    "description": schema["description"],
+                    "parameters": schema["input_schema"]
+                }]
+            }],
+            "toolConfig": {
+                "functionCallingConfig": { "mode": "ANY" }
+            }
+        });
+
+        let resp = client
+            .post(format!(
+                "{}/v1beta/models/{}:generateContent",
+                self.api_url, self.model
+            ))
+            .header("x-goog-api-key", &self.api_key)
+            .header("content-type", "application/json")
+            .json(&body)
+            .timeout(std::time::Duration::from_secs(60))
+            .send()
+            .await?;
+
+        let status = resp.status();
+        let resp_json: serde_json::Value = resp.json().await?;
+
+        if !status.is_success() {
+            let err_msg = resp_json["error"]["message"]
+                .as_str()
+                .unwrap_or("Unknown error");
+            anyhow::bail!("Gemini API error ({status}): {err_msg}");
+        }
+
+        // Gemini returns functionCall in candidates[0].content.parts[]
+        let parts = resp_json["candidates"][0]["content"]["parts"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("No parts in Gemini response"))?;
+
+        for part in parts {
+            if let Some(fc) = part.get("functionCall") {
+                let args = &fc["args"];
+                let plan: TransformPlan = serde_json::from_value(args.clone())?;
+                return Ok(plan);
+            }
+        }
+
+        anyhow::bail!("No functionCall in Gemini response")
+    }
+
+    fn name(&self) -> &str {
+        "gemini"
+    }
+}
+
 // -- Ollama Provider ----------------------------------------------------------
 
 struct OllamaPlanner {
@@ -412,6 +503,10 @@ mod tests {
             LlmProvider::OpenAi
         ));
         assert!(matches!(
+            "gemini".parse::<LlmProvider>().unwrap(),
+            LlmProvider::Gemini
+        ));
+        assert!(matches!(
             "ollama".parse::<LlmProvider>().unwrap(),
             LlmProvider::Ollama
         ));
@@ -435,6 +530,14 @@ mod tests {
             model: None,
         });
         assert_eq!(planner.name(), "openai");
+
+        let planner = create_planner(PlannerConfig {
+            provider: LlmProvider::Gemini,
+            api_key: "test-key".into(),
+            api_url: None,
+            model: None,
+        });
+        assert_eq!(planner.name(), "gemini");
 
         let planner = create_planner(PlannerConfig {
             provider: LlmProvider::Ollama,

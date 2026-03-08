@@ -56,6 +56,19 @@ pub fn create_advisor(config: AdvisorConfig) -> Box<dyn TuningAdvisor> {
                 base_url: url,
             })
         }
+        LlmProvider::Gemini => {
+            let model = config
+                .model
+                .unwrap_or_else(|| "gemini-2.5-flash".into());
+            let url = config
+                .api_url
+                .unwrap_or_else(|| "https://generativelanguage.googleapis.com".into());
+            Box::new(GeminiAdvisor {
+                api_key: config.api_key,
+                model,
+                base_url: url,
+            })
+        }
         LlmProvider::Ollama => {
             let model = config.model.unwrap_or_else(|| "llama3".into());
             let url = config
@@ -395,6 +408,94 @@ impl TuningAdvisor for OpenAiAdvisor {
 
     fn name(&self) -> &str {
         "OpenAI"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Gemini Advisor
+// ---------------------------------------------------------------------------
+
+struct GeminiAdvisor {
+    api_key: String,
+    model: String,
+    base_url: String,
+}
+
+#[async_trait::async_trait]
+impl TuningAdvisor for GeminiAdvisor {
+    async fn recommend(
+        &self,
+        context: &PgContext,
+        workload: &WorkloadAnalysis,
+        hint: Option<&str>,
+        previous: &[TuningIteration],
+    ) -> Result<Vec<Recommendation>> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()?;
+
+        let tools_array = tool_schema();
+        let function_decls: Vec<serde_json::Value> = tools_array
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("tool_schema did not return an array"))?
+            .iter()
+            .map(|t| {
+                json!({
+                    "name": t["name"],
+                    "description": t["description"],
+                    "parameters": t["input_schema"]
+                })
+            })
+            .collect();
+
+        let body = json!({
+            "contents": [{
+                "role": "user",
+                "parts": [{ "text": format!("{}\n\n{}", build_system_prompt(), build_user_message(context, workload, hint, previous)) }]
+            }],
+            "tools": [{ "functionDeclarations": function_decls }],
+            "toolConfig": {
+                "functionCallingConfig": { "mode": "ANY" }
+            }
+        });
+
+        let resp = client
+            .post(format!(
+                "{}/v1beta/models/{}:generateContent",
+                self.base_url, self.model
+            ))
+            .header("x-goog-api-key", &self.api_key)
+            .header("content-type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            bail!("Gemini API error {status}: {text}");
+        }
+
+        let data: serde_json::Value = resp.json().await?;
+        let mut recs = Vec::new();
+
+        if let Some(parts) = data["candidates"][0]["content"]["parts"].as_array() {
+            for part in parts {
+                if let Some(fc) = part.get("functionCall") {
+                    if let Some(name) = fc["name"].as_str() {
+                        if let Some(rec) = parse_tool_call(name, &fc["args"]) {
+                            recs.push(rec);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(recs)
+    }
+
+    fn name(&self) -> &str {
+        "Gemini"
     }
 }
 

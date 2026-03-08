@@ -420,9 +420,10 @@ fn cmd_transform(args: pg_retest::cli::TransformArgs) -> Result<()> {
             let api_key = api_key
                 .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
                 .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+                .or_else(|| std::env::var("GEMINI_API_KEY").ok())
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "API key required. Use --api-key or set ANTHROPIC_API_KEY/OPENAI_API_KEY env var"
+                        "API key required. Use --api-key or set ANTHROPIC_API_KEY/OPENAI_API_KEY/GEMINI_API_KEY env var"
                     )
                 })?;
 

@@ -36,6 +36,7 @@ pub async fn run_tuning(config: &TuningConfig) -> Result<TuningReport> {
         .clone()
         .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
         .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+        .or_else(|| std::env::var("GEMINI_API_KEY").ok())
         .unwrap_or_default();
 
     let provider: crate::transform::planner::LlmProvider = config.provider.parse()?;
