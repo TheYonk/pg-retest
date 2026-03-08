@@ -98,6 +98,16 @@ pub enum WsMessage {
         iteration: u32,
         improvement_pct: f64,
     },
+    TuningRollbackStarted {
+        task_id: String,
+        iteration: u32,
+    },
+    TuningRollbackCompleted {
+        task_id: String,
+        iteration: u32,
+        rolled_back: u32,
+        failed: u32,
+    },
     TuningCompleted {
         task_id: String,
         total_improvement_pct: f64,

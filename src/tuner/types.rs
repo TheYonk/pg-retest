@@ -96,6 +96,10 @@ pub enum TuningEvent {
     ChangeApplied { iteration: u32, change: AppliedChange },
     /// Replay after changes completed with comparison.
     ReplayCompleted { iteration: u32, comparison: ComparisonSummary },
+    /// Rollback started due to regression.
+    RollbackStarted { iteration: u32 },
+    /// Rollback completed with results.
+    RollbackCompleted { iteration: u32, rolled_back: u32, failed: u32 },
 }
 
 #[cfg(test)]

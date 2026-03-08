@@ -118,6 +118,78 @@ pub async fn apply_all(client: &Client, recs: &[Recommendation]) -> Vec<AppliedC
     results
 }
 
+/// Result of rolling back a single applied change.
+#[derive(Debug, Clone)]
+pub struct RollbackResult {
+    pub summary: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+/// Rollback all successfully applied changes in reverse order.
+///
+/// Only changes that have `success == true` and `rollback_sql.is_some()` are rolled back.
+/// Config changes also trigger `pg_reload_conf()` after the ALTER SYSTEM RESET.
+pub async fn rollback_all(client: &Client, changes: &[AppliedChange]) -> Vec<RollbackResult> {
+    let mut results = Vec::new();
+    let mut needs_reload = false;
+
+    // Reverse order: undo last change first
+    for change in changes.iter().rev() {
+        if !change.success {
+            continue;
+        }
+        let sql = match &change.rollback_sql {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let summary = rec_summary(&change.recommendation);
+        match execute_sql(client, sql).await {
+            Ok(()) => {
+                if matches!(change.recommendation, Recommendation::ConfigChange { .. }) {
+                    needs_reload = true;
+                }
+                results.push(RollbackResult {
+                    summary,
+                    success: true,
+                    error: None,
+                });
+            }
+            Err(e) => {
+                results.push(RollbackResult {
+                    summary,
+                    success: false,
+                    error: Some(e.to_string()),
+                });
+            }
+        }
+    }
+
+    // Reload config once if any config changes were rolled back
+    if needs_reload {
+        let _ = execute_sql(client, "SELECT pg_reload_conf()").await;
+    }
+
+    results
+}
+
+fn rec_summary(rec: &Recommendation) -> String {
+    match rec {
+        Recommendation::ConfigChange {
+            parameter,
+            current_value,
+            ..
+        } => format!("{} -> {}", parameter, current_value),
+        Recommendation::CreateIndex { sql, .. } => {
+            let preview: String = sql.chars().take(50).collect();
+            preview
+        }
+        Recommendation::QueryRewrite { .. } => "query rewrite".into(),
+        Recommendation::SchemaChange { description, .. } => description.clone(),
+    }
+}
+
 /// Execute a SQL statement via batch_execute (no result rows expected).
 async fn execute_sql(client: &Client, sql: &str) -> Result<()> {
     client.batch_execute(sql).await?;

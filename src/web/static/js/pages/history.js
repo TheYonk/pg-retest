@@ -199,7 +199,7 @@ function renderTuningIterations(report) {
                     ${improvementHtml}
                 </div>
                 <div class="text-xs text-slate-500 mb-2">
-                    ${iter.recommendations.length} recommendations | ${successCount} applied${failCount > 0 ? ` | ${failCount} failed` : ''}
+                    ${iter.recommendations.length} recommendations | ${successCount} applied${failCount > 0 ? ` | ${failCount} failed` : ''}${iter.llm_feedback && iter.llm_feedback.includes('ROLLED BACK') ? ' | <span class="text-warning font-semibold">ROLLED BACK</span>' : ''}
                 </div>
                 <div class="space-y-1">
         `;

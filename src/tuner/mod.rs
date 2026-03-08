@@ -11,7 +11,7 @@ use crate::replay::{self, ReplayMode};
 use crate::transform::analyze;
 
 use self::advisor::{create_advisor, AdvisorConfig};
-use self::apply::apply_all;
+use self::apply::{apply_all, rollback_all};
 use self::context::{collect_context, connect};
 use self::safety::{check_production_hostname, validate_recommendations};
 use self::types::*;
@@ -237,8 +237,39 @@ pub async fn run_tuning_with_events(
             comparison.errors_delta,
         );
 
-        // Check for regression — stop if p95 got worse
+        // Check for regression — rollback and stop if p95 got worse
         let should_stop = comparison.p95_change_pct > 5.0;
+
+        if should_stop {
+            println!("  p95 latency regressed by {:.1}%. Rolling back changes...", comparison.p95_change_pct);
+            send_event(TuningEvent::RollbackStarted { iteration: i });
+
+            let rollback_results = rollback_all(&client, &applied).await;
+            let rolled_back = rollback_results.iter().filter(|r| r.success).count() as u32;
+            let failed = rollback_results.iter().filter(|r| !r.success).count() as u32;
+
+            for r in &rollback_results {
+                if r.success {
+                    println!("    Rolled back: {}", r.summary);
+                } else {
+                    println!("    Rollback FAILED: {} — {}", r.summary, r.error.as_deref().unwrap_or("unknown"));
+                }
+            }
+            println!("  Rollback: {} succeeded, {} failed", rolled_back, failed);
+            send_event(TuningEvent::RollbackCompleted { iteration: i, rolled_back, failed });
+
+            // Reload config after rollback
+            let _ = client.batch_execute("SELECT pg_reload_conf()").await;
+
+            iterations.push(TuningIteration {
+                iteration: i,
+                recommendations,
+                applied,
+                comparison: Some(comparison),
+                llm_feedback: format!("{} — ROLLED BACK due to regression.", feedback),
+            });
+            break;
+        }
 
         iterations.push(TuningIteration {
             iteration: i,
@@ -247,11 +278,6 @@ pub async fn run_tuning_with_events(
             comparison: Some(comparison),
             llm_feedback: feedback,
         });
-
-        if should_stop {
-            println!("  p95 latency regressed. Stopping early.");
-            break;
-        }
     }
 
     // Calculate total improvement

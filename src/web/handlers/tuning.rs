@@ -132,6 +132,22 @@ pub async fn start_tuning(
                                     iteration,
                                     improvement_pct: -comparison.p95_change_pct,
                                 },
+                                TuningEvent::RollbackStarted { iteration } => {
+                                    WsMessage::TuningRollbackStarted {
+                                        task_id: task_id_for_events.clone(),
+                                        iteration,
+                                    }
+                                }
+                                TuningEvent::RollbackCompleted {
+                                    iteration,
+                                    rolled_back,
+                                    failed,
+                                } => WsMessage::TuningRollbackCompleted {
+                                    task_id: task_id_for_events.clone(),
+                                    iteration,
+                                    rolled_back,
+                                    failed,
+                                },
                             };
                             state_for_events.broadcast(msg);
                         }
