@@ -76,11 +76,11 @@ Key modules:
 - `transform::plan` — TransformPlan data types (TOML/JSON serde): QueryGroup, TransformRule (Scale/Inject/InjectSession/Remove), PlanSource, PlanAnalysis
 - `transform::analyze` — Deterministic workload analyzer: `extract_tables()` (regex-based), `extract_filter_columns()`, `analyze_workload()` (Union-Find table grouping), produces `WorkloadAnalysis` for LLM context
 - `transform::engine` — Deterministic transform engine: `apply_transform()` applies a TransformPlan to a WorkloadProfile (weighted session duplication, query injection with seeded RNG, group removal)
-- `transform::planner` — Multi-provider LLM planner: `LlmPlanner` async trait with `ClaudePlanner` (tool_use), `OpenAiPlanner` (function_calling), `OllamaPlanner` (JSON mode). Direct HTTP via reqwest.
+- `transform::planner` — Multi-provider LLM planner: `LlmPlanner` async trait with `ClaudePlanner` (tool_use), `OpenAiPlanner` (function_calling), `GeminiPlanner` (functionDeclarations), `BedrockPlanner` (AWS CLI Converse), `OllamaPlanner` (JSON mode). Direct HTTP via reqwest (Bedrock via AWS CLI subprocess).
 - `tuner` — AI-assisted tuning orchestrator (configurable loop: context → LLM → safety → apply → replay → compare)
 - `tuner::types` — Recommendation, TuningConfig, TuningIteration, TuningReport
 - `tuner::context` — PG introspection (pg_settings, schema, pg_stat_statements, EXPLAIN plans)
-- `tuner::advisor` — TuningAdvisor trait with Claude/OpenAI/Ollama providers
+- `tuner::advisor` — TuningAdvisor trait with Claude/OpenAI/Gemini/Bedrock/Ollama providers
 - `tuner::safety` — Parameter allowlist, blocked operations, production hostname check
 - `tuner::apply` — Recommendation application with rollback tracking
 - `cli` — Clap derive-based CLI argument structs (11 subcommands: capture, replay, compare, inspect, proxy, run, ab, web, transform, tune)
@@ -109,7 +109,7 @@ Key modules:
 - **Gap Closure** — Complete. Per-category scaling, A/B variant testing (`pg-retest ab`), cloud-native capture from AWS RDS/Aurora (`--source-type rds`).
 - **Web Dashboard** — Complete. Axum + Alpine.js + Chart.js SPA (`pg-retest web --port 8080`). 11 pages: dashboard, workloads, proxy, replay, A/B, compare, pipeline, history, transform, tuning, help. WebSocket real-time updates. SQLite metadata storage.
 - **Workload Transform** — Complete. AI-powered workload transformation (`pg-retest transform analyze|plan|apply`). 3-layer architecture: deterministic Analyzer (Union-Find table grouping), multi-provider LLM Planner (Claude/OpenAI/Ollama), deterministic Engine (weighted session duplication, query injection, group removal). TOML transform plans as intermediate artifact. Design at `docs/plans/2026-03-07-workload-transform-design.md`. 201 tests.
-- **M5: AI-Assisted Tuning** — Complete. Multi-provider LLM tuning (`pg-retest tune`). Configurable loop: collect PG context → LLM recommendations → safety validation → apply → replay → compare → iterate. 4 recommendation types (config, index, query rewrite, schema). Safety allowlist (~41 safe PG params), production hostname check. Claude/OpenAI/Ollama providers. Dry-run default. Web dashboard tuning page. Design at `docs/plans/2026-03-07-m5-ai-tuning-design-v2.md`. 215 tests.
+- **M5: AI-Assisted Tuning** — Complete. Multi-provider LLM tuning (`pg-retest tune`). Configurable loop: collect PG context → LLM recommendations → safety validation → apply → replay → compare → iterate. 4 recommendation types (config, index, query rewrite, schema). Safety allowlist (~41 safe PG params), production hostname check. 5 providers: Claude/OpenAI/Gemini/Bedrock/Ollama. Tuning report persistence to SQLite. Dry-run default. Web dashboard tuning page. 216 tests.
 
 ## Gotchas
 
@@ -139,11 +139,16 @@ Key modules:
 - Tuner: `pg_stat_statements` is optional — if the extension isn't installed, `stat_statements` will be `None`.
 - Tuner: EXPLAIN is only run for SELECT queries without bind parameters (queries with `$1` are skipped).
 - Tuner: production hostname check blocks targets containing "prod", "production", "primary", "master", "main" without `--force`.
+- Tuner: SchemaChange SQL is split on semicolons and executed per-statement for better error reporting.
+- Tuner: OpenAI newer models (gpt-5, o-series) use `max_completion_tokens`; older models use `max_tokens`. Model prefix detection handles this automatically.
+- Tuner: Bedrock provider uses `aws bedrock-runtime converse` CLI subprocess (no AWS SDK crate dependency). Uses standard AWS credentials (env vars, profiles, IAM roles).
+- Tuner: Gemini provider uses `x-goog-api-key` header auth and `functionDeclarations` format. Set `GEMINI_API_KEY` env var or use `--api-key`.
+- Tuner: tuning reports are persisted to SQLite `tuning_reports` table and also create a `runs` entry (type="tuning") for history tracking.
 - Transform: `extract_tables()` groups tables by co-occurrence within a single SQL statement (Union-Find), not by session co-occurrence. Two tables in separate queries won't be grouped unless a third query touches both.
 - Transform: The engine's Remove operation uses `query_indices` from the plan's group definition to identify which queries to remove. Empty `query_indices` means nothing is removed.
 - Transform: Transform plans are TOML files with `#[serde(tag = "type")]` on `TransformRule` enum. The `type` field must be `scale`, `inject`, `inject_session`, or `remove`.
 - Transform: `apply_transform()` is deterministic when given the same seed. Default seed is derived from the plan's prompt string hash.
-- Transform: LLM planner uses `reqwest` for direct HTTP calls (no SDK dependencies). API key resolution: `--api-key` flag → `ANTHROPIC_API_KEY` env → `OPENAI_API_KEY` env.
+- Transform: LLM planner uses `reqwest` for direct HTTP calls (Bedrock via AWS CLI subprocess). API key resolution: `--api-key` flag → `ANTHROPIC_API_KEY` env → `OPENAI_API_KEY` env → `GEMINI_API_KEY` env. Bedrock uses standard AWS credentials (env/profile/IAM role).
 - Transform: `--dry-run` on `transform plan` shows the analyzer output and system prompt without calling the LLM API.
 
 ## Conventions
