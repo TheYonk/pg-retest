@@ -349,10 +349,8 @@ async fn collect_explain_plans(client: &Client, queries: &[SlowQuery]) -> Vec<Ex
         let explain_sql = format!("EXPLAIN (FORMAT JSON, COSTS) {}", query.sql);
         match client.query_one(&explain_sql, &[]).await {
             Ok(row) => {
-                // EXPLAIN FORMAT JSON returns a text column containing JSON
-                let plan_text: String = row.get(0);
-                let plan_json: serde_json::Value =
-                    serde_json::from_str(&plan_text).unwrap_or(serde_json::Value::Null);
+                // EXPLAIN (FORMAT JSON) returns a json column; read directly as Value
+                let plan_json: serde_json::Value = row.get(0);
                 plans.push(ExplainPlan {
                     sql: query.sql.clone(),
                     plan_json,
