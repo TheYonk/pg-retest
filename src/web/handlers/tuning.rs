@@ -26,16 +26,22 @@ pub struct StartTuningRequest {
 pub async fn start_tuning(
     State(state): State<AppState>,
     Json(req): Json<StartTuningRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     // Check if tuning is already running
     if state.tasks.has_running("tuning").await {
-        return Err(StatusCode::CONFLICT);
+        return Err((
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": "Tuning is already running" })),
+        ));
     }
 
     // Resolve workload path
     let wkl_path = state.data_dir.join("workloads").join(&req.workload_id);
     if !wkl_path.exists() {
-        return Err(StatusCode::NOT_FOUND);
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": format!("Workload not found: {}", req.workload_id) })),
+        ));
     }
 
     let config = crate::tuner::types::TuningConfig {
@@ -224,46 +230,61 @@ pub async fn start_tuning(
 pub async fn get_tuning_status(
     State(state): State<AppState>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     match state.tasks.get(&id).await {
         Some(info) => Ok(Json(serde_json::json!({
             "task_id": info.id,
             "status": if info.running { "running" } else { "completed" },
             "label": info.label,
         }))),
-        None => Err(StatusCode::NOT_FOUND),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Tuning task not found" })),
+        )),
     }
 }
 
 pub async fn cancel_tuning(
     State(state): State<AppState>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     if state.tasks.cancel(&id).await {
         Ok(Json(serde_json::json!({ "cancelled": true })))
     } else {
-        Err(StatusCode::NOT_FOUND)
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Tuning task not found" })),
+        ))
     }
 }
 
 pub async fn list_tuning_reports(
     State(state): State<AppState>,
-) -> Result<Json<Vec<db::TuningReportRow>>, StatusCode> {
+) -> Result<Json<Vec<db::TuningReportRow>>, (StatusCode, Json<serde_json::Value>)> {
     let conn = state.db.lock().await;
     match db::list_tuning_reports(&conn, None) {
         Ok(reports) => Ok(Json(reports)),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Failed to list reports: {e}") })),
+        )),
     }
 }
 
 pub async fn get_tuning_report(
     State(state): State<AppState>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> Result<Json<db::TuningReportRow>, StatusCode> {
+) -> Result<Json<db::TuningReportRow>, (StatusCode, Json<serde_json::Value>)> {
     let conn = state.db.lock().await;
     match db::get_tuning_report(&conn, &id) {
         Ok(Some(report)) => Ok(Json(report)),
-        Ok(None) => Err(StatusCode::NOT_FOUND),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Tuning report not found" })),
+        )),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Failed to get report: {e}") })),
+        )),
     }
 }

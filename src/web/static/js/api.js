@@ -15,9 +15,15 @@ const api = {
         }
         try {
             const res = await fetch(`${API_BASE}${path}`, opts);
-            const data = await res.json();
+            const text = await res.text();
+            let data;
+            try {
+                data = text ? JSON.parse(text) : {};
+            } catch {
+                data = {};
+            }
             if (!res.ok && !data.error) {
-                data.error = `HTTP ${res.status}`;
+                data.error = text || `HTTP ${res.status}`;
             }
             return data;
         } catch (e) {

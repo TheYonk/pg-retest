@@ -2,6 +2,7 @@
 function tuningPage() {
     return {
         workloads: [],
+        reports: [],
         loading: true,
         status: 'idle', // idle, running, completed, error
         taskId: null,
@@ -15,10 +16,15 @@ function tuningPage() {
             if (!el) return;
             el.innerHTML = Status.loading();
 
-            const res = await api.listWorkloads();
-            this.workloads = res.workloads || [];
+            const [wklRes, repRes] = await Promise.all([
+                api.listWorkloads(),
+                api.get('/tuning/reports'),
+            ]);
+            this.workloads = wklRes.workloads || [];
+            this.reports = Array.isArray(repRes) ? repRes : [];
             this.loading = false;
             this.render(el);
+            this.renderReports();
             this.setupWsListeners();
         },
 
@@ -77,7 +83,7 @@ function tuningPage() {
                 }
             });
 
-            wsClient.on('TuningCompleted', (msg) => {
+            wsClient.on('TuningCompleted', async (msg) => {
                 if (this.taskId && msg.task_id === this.taskId) {
                     this.status = 'completed';
                     this.totalImprovement = msg.total_improvement_pct;
@@ -86,6 +92,10 @@ function tuningPage() {
                     this.renderTimeline();
                     this.renderSummary();
                     window.showToast('Tuning completed!', 'success');
+                    // Refresh historical reports
+                    const repRes = await api.get('/tuning/reports');
+                    this.reports = Array.isArray(repRes) ? repRes : [];
+                    this.renderReports();
                 }
             });
 
@@ -210,6 +220,133 @@ function tuningPage() {
             `;
         },
 
+        renderReports() {
+            const el = document.getElementById('tuning-reports');
+            if (!el) return;
+
+            if (this.reports.length === 0) {
+                el.innerHTML = '';
+                return;
+            }
+
+            let html = `
+                <div class="card">
+                    <h3 class="section-title mb-4">Previous Tuning Sessions</h3>
+                    <div class="space-y-3">
+            `;
+
+            for (const report of this.reports) {
+                let parsed = null;
+                try { parsed = JSON.parse(report.report_json); } catch {}
+
+                const date = report.created_at || '';
+                const improvement = report.total_improvement_pct || 0;
+                const improvementColor = improvement > 0 ? 'text-accent' : improvement < 0 ? 'text-danger' : 'text-slate-400';
+                const improvementSign = improvement > 0 ? '+' : '';
+                const iters = report.iterations || 0;
+                const provider = report.provider || 'unknown';
+                const hint = report.hint || '';
+                const reportId = report.id;
+
+                // Build recommendations from parsed report
+                let recsHtml = '';
+                if (parsed && parsed.iterations) {
+                    for (const iter of parsed.iterations) {
+                        if (!iter.recommendations) continue;
+                        for (const rec of iter.recommendations) {
+                            const badge = this.recTypeBadge(rec.type);
+                            const summary = this.recSummary(rec);
+                            const applied = iter.applied ? iter.applied.find(a => this.recMatch(a.recommendation, rec)) : null;
+                            const statusBadge = applied
+                                ? (applied.success
+                                    ? '<span class="badge badge-success text-xs">Applied</span>'
+                                    : `<span class="badge badge-danger text-xs">Failed</span>`)
+                                : '<span class="badge badge-neutral text-xs">Dry-run</span>';
+
+                            recsHtml += `
+                                <div class="flex items-start gap-2 py-1.5 border-b border-slate-700/30 last:border-0">
+                                    <div class="flex items-center gap-2 flex-shrink-0">${badge} ${statusBadge}</div>
+                                    <div class="text-xs text-slate-300 min-w-0">
+                                        <div class="font-mono truncate">${this.escapeHtml(summary)}</div>
+                                        <div class="text-slate-500 mt-0.5">${this.escapeHtml(rec.rationale || '')}</div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+                }
+
+                // Comparison stats from iterations
+                let compHtml = '';
+                if (parsed && parsed.iterations) {
+                    for (const iter of parsed.iterations) {
+                        if (iter.comparison) {
+                            const c = iter.comparison;
+                            compHtml += `
+                                <div class="flex gap-4 text-xs font-mono mt-2">
+                                    <span class="text-slate-400">p50: <span class="${c.p50_change_pct < 0 ? 'text-accent' : 'text-danger'}">${c.p50_change_pct > 0 ? '+' : ''}${c.p50_change_pct.toFixed(1)}%</span></span>
+                                    <span class="text-slate-400">p95: <span class="${c.p95_change_pct < 0 ? 'text-accent' : 'text-danger'}">${c.p95_change_pct > 0 ? '+' : ''}${c.p95_change_pct.toFixed(1)}%</span></span>
+                                    <span class="text-slate-400">p99: <span class="${c.p99_change_pct < 0 ? 'text-accent' : 'text-danger'}">${c.p99_change_pct > 0 ? '+' : ''}${c.p99_change_pct.toFixed(1)}%</span></span>
+                                    <span class="text-slate-400">regressions: <span class="text-slate-300">${c.regressions}</span></span>
+                                </div>
+                            `;
+                        }
+                    }
+                }
+
+                html += `
+                    <details class="group">
+                        <summary class="flex items-center justify-between cursor-pointer p-3 rounded-lg bg-slate-800/50 hover:bg-slate-800 transition-colors">
+                            <div class="flex items-center gap-3">
+                                <span class="font-mono text-lg font-bold ${improvementColor}">${improvementSign}${improvement.toFixed(1)}%</span>
+                                <div>
+                                    <div class="text-sm text-slate-300">${this.escapeHtml(hint || 'No hint provided')}</div>
+                                    <div class="text-xs text-slate-500">${date} · ${provider} · ${iters} iteration${iters !== 1 ? 's' : ''}</div>
+                                </div>
+                            </div>
+                            <svg class="w-4 h-4 text-slate-500 transform transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                        </summary>
+                        <div class="mt-2 p-3 space-y-2">
+                            ${recsHtml || '<div class="text-xs text-slate-500">No recommendations recorded</div>'}
+                            ${compHtml}
+                        </div>
+                    </details>
+                `;
+            }
+
+            html += '</div></div>';
+            el.innerHTML = html;
+        },
+
+        recTypeBadge(type) {
+            const badges = {
+                config_change: '<span class="badge badge-info text-xs">Config</span>',
+                create_index: '<span class="badge badge-warning text-xs">Index</span>',
+                query_rewrite: '<span class="badge badge-accent text-xs">Rewrite</span>',
+                schema_change: '<span class="badge badge-neutral text-xs">Schema</span>',
+            };
+            return badges[type] || `<span class="badge badge-neutral text-xs">${type || '?'}</span>`;
+        },
+
+        recSummary(rec) {
+            switch (rec.type) {
+                case 'config_change':
+                    return `${rec.parameter}: ${rec.current_value} → ${rec.recommended_value}`;
+                case 'create_index':
+                    return rec.sql || `INDEX on ${rec.table}(${(rec.columns || []).join(', ')})`;
+                case 'query_rewrite':
+                    return `${(rec.original_sql || '').substring(0, 60)}... → ${(rec.rewritten_sql || '').substring(0, 60)}...`;
+                case 'schema_change':
+                    return rec.description || rec.sql || 'Schema change';
+                default:
+                    return JSON.stringify(rec).substring(0, 100);
+            }
+        },
+
+        recMatch(a, b) {
+            return a && b && a.type === b.type && JSON.stringify(a) === JSON.stringify(b);
+        },
+
         render(el) {
             const wklOptions = this.workloads.map(w =>
                 `<option value="${w.id}">${w.name} (${w.total_sessions}s / ${w.total_queries}q)</option>`
@@ -322,6 +459,9 @@ function tuningPage() {
 
                 <!-- Summary -->
                 <div id="tuning-summary"></div>
+
+                <!-- Historical Reports -->
+                <div id="tuning-reports"></div>
             </div>
             `;
         },
