@@ -77,18 +77,18 @@ Key modules:
 - `transform::analyze` — Deterministic workload analyzer: `extract_tables()` (regex-based), `extract_filter_columns()`, `analyze_workload()` (Union-Find table grouping), produces `WorkloadAnalysis` for LLM context
 - `transform::engine` — Deterministic transform engine: `apply_transform()` applies a TransformPlan to a WorkloadProfile (weighted session duplication, query injection with seeded RNG, group removal)
 - `transform::planner` — Multi-provider LLM planner: `LlmPlanner` async trait with `ClaudePlanner` (tool_use), `OpenAiPlanner` (function_calling), `GeminiPlanner` (functionDeclarations), `BedrockPlanner` (AWS CLI Converse), `OllamaPlanner` (JSON mode). Direct HTTP via reqwest (Bedrock via AWS CLI subprocess).
-- `tuner` — AI-assisted tuning orchestrator (configurable loop: context → LLM → safety → apply → replay → compare)
-- `tuner::types` — Recommendation, TuningConfig, TuningIteration, TuningReport
+- `tuner` — AI-assisted tuning orchestrator (configurable loop: context → LLM → safety → apply → replay → compare → auto-rollback on regression)
+- `tuner::types` — Recommendation, TuningConfig, TuningIteration, TuningReport, TuningEvent (including RollbackStarted/RollbackCompleted)
 - `tuner::context` — PG introspection (pg_settings, schema, pg_stat_statements, EXPLAIN plans)
-- `tuner::advisor` — TuningAdvisor trait with Claude/OpenAI/Gemini/Bedrock/Ollama providers
+- `tuner::advisor` — TuningAdvisor trait with Claude/OpenAI/Gemini/Bedrock/Ollama providers (120s request timeout)
 - `tuner::safety` — Parameter allowlist, blocked operations, production hostname check
-- `tuner::apply` — Recommendation application with rollback tracking
+- `tuner::apply` — Recommendation application with rollback tracking (ConfigChange via ALTER SYSTEM RESET, CreateIndex via DROP INDEX)
 - `cli` — Clap derive-based CLI argument structs (11 subcommands: capture, replay, compare, inspect, proxy, run, ab, web, transform, tune)
 - `web` — Axum HTTP server + WebSocket dashboard (embedded static files via rust-embed, SQLite metadata via rusqlite)
-- `web::db` — SQLite schema + CRUD for workloads, runs, proxy_sessions, threshold_results
+- `web::db` — SQLite schema + CRUD for workloads, runs, proxy_sessions, threshold_results, tuning_reports
 - `web::state` — `AppState` (db, data_dir, ws_broadcast, task_manager)
 - `web::tasks` — `TaskManager` for background ops (proxy, replay, pipeline) with CancellationToken
-- `web::ws` — WebSocket handler with `WsMessage` enum (ProxyStarted, ReplayProgress, PipelineCompleted, etc.)
+- `web::ws` — WebSocket handler with `WsMessage` enum (ProxyStarted, ReplayProgress, PipelineCompleted, TuningIterationStarted, TuningRecommendations, RollbackStarted, RollbackCompleted, etc.)
 - `web::routes` — Router construction with all `/api/v1/` route nesting
 - `web::handlers::workloads` — Upload, import, list, inspect, classify, delete workload profiles
 - `web::handlers::replay` — Start/cancel/status replay with progress broadcast
@@ -108,8 +108,8 @@ Key modules:
 - **M4: Cross-Database Capture (MySQL)** — Complete. MySQL slow query log parser, composable SQL transform pipeline (regex-based: backticks, LIMIT, IFNULL, IF, UNIX_TIMESTAMP), CLI `--source-type mysql-slow`, pipeline config support.
 - **Gap Closure** — Complete. Per-category scaling, A/B variant testing (`pg-retest ab`), cloud-native capture from AWS RDS/Aurora (`--source-type rds`).
 - **Web Dashboard** — Complete. Axum + Alpine.js + Chart.js SPA (`pg-retest web --port 8080`). 11 pages: dashboard, workloads, proxy, replay, A/B, compare, pipeline, history, transform, tuning, help. WebSocket real-time updates. SQLite metadata storage.
-- **Workload Transform** — Complete. AI-powered workload transformation (`pg-retest transform analyze|plan|apply`). 3-layer architecture: deterministic Analyzer (Union-Find table grouping), multi-provider LLM Planner (Claude/OpenAI/Ollama), deterministic Engine (weighted session duplication, query injection, group removal). TOML transform plans as intermediate artifact. Design at `docs/plans/2026-03-07-workload-transform-design.md`. 201 tests.
-- **M5: AI-Assisted Tuning** — Complete. Multi-provider LLM tuning (`pg-retest tune`). Configurable loop: collect PG context → LLM recommendations → safety validation → apply → replay → compare → iterate. 4 recommendation types (config, index, query rewrite, schema). Safety allowlist (~41 safe PG params), production hostname check. 5 providers: Claude/OpenAI/Gemini/Bedrock/Ollama. Tuning report persistence to SQLite. Dry-run default. Web dashboard tuning page. 216 tests.
+- **Workload Transform** — Complete. AI-powered workload transformation (`pg-retest transform analyze|plan|apply`). 3-layer architecture: deterministic Analyzer (Union-Find table grouping), multi-provider LLM Planner (Claude/OpenAI/Gemini/Bedrock/Ollama), deterministic Engine (weighted session duplication, query injection, group removal). TOML transform plans as intermediate artifact. Design at `docs/plans/2026-03-07-workload-transform-design.md`. 201 tests.
+- **M5: AI-Assisted Tuning** — Complete. Multi-provider LLM tuning (`pg-retest tune`). Configurable loop: collect PG context → LLM recommendations → safety validation → apply → replay → compare → auto-rollback on p95 regression → iterate. 4 recommendation types (config, index, query rewrite, schema). Safety allowlist (~41 safe PG params), production hostname check. 5 providers: Claude/OpenAI/Gemini/Bedrock/Ollama. Tuning report persistence to SQLite. Dry-run default. Web dashboard tuning page with history and recommendations. 216 tests.
 
 ## Gotchas
 
@@ -144,6 +144,11 @@ Key modules:
 - Tuner: Bedrock provider uses `aws bedrock-runtime converse` CLI subprocess (no AWS SDK crate dependency). Uses standard AWS credentials (env vars, profiles, IAM roles).
 - Tuner: Gemini provider uses `x-goog-api-key` header auth and `functionDeclarations` format. Set `GEMINI_API_KEY` env var or use `--api-key`.
 - Tuner: tuning reports are persisted to SQLite `tuning_reports` table and also create a `runs` entry (type="tuning") for history tracking.
+- Tuner: auto-rollback triggers when p95 latency regresses >5% after applying changes. Rollback reverses ConfigChange via `ALTER SYSTEM RESET` + `pg_reload_conf()` and CreateIndex via `DROP INDEX`.
+- Tuner: LLM request timeout is 120s for all advisor providers. Transform planner timeouts are shorter (Claude/OpenAI 30s, Gemini/Bedrock 60s).
+- Tuner: default model versions — Claude: `claude-sonnet-4-20250514`, OpenAI: `gpt-4o`, Gemini: `gemini-2.5-flash`, Bedrock: `us.anthropic.claude-sonnet-4-20250514-v1:0`, Ollama: `llama3`.
+- Web dashboard: tuning page shows previous sessions with expandable recommendation details, applied/failed/dry-run badges, and comparison stats (p50/p95/p99 changes).
+- Web dashboard: API handlers return structured JSON error bodies (not bare status codes). Frontend handles empty/non-JSON error responses gracefully.
 - Transform: `extract_tables()` groups tables by co-occurrence within a single SQL statement (Union-Find), not by session co-occurrence. Two tables in separate queries won't be grouped unless a third query touches both.
 - Transform: The engine's Remove operation uses `query_indices` from the plan's group definition to identify which queries to remove. Empty `query_indices` means nothing is removed.
 - Transform: Transform plans are TOML files with `#[serde(tag = "type")]` on `TransformRule` enum. The `type` field must be `scale`, `inject`, `inject_session`, or `remove`.

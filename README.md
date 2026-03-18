@@ -1,73 +1,251 @@
 # pg-retest
 
-Capture, replay, and compare PostgreSQL workloads.
+![Rust](https://img.shields.io/badge/language-Rust-orange?logo=rust)
+![Edition](https://img.shields.io/badge/edition-2021-blue)
+![Version](https://img.shields.io/badge/version-0.2.0-green)
+![Tests](https://img.shields.io/badge/tests-216-brightgreen)
+![Clippy](https://img.shields.io/badge/clippy-zero%20warnings-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
-pg-retest captures SQL workload from multiple sources (PostgreSQL logs, wire protocol proxy, MySQL slow logs, AWS RDS/Aurora), replays it against a target database with full connection parallelism and transaction awareness, and produces performance comparison reports. Use it to validate configuration changes, server migrations, capacity planning, and cross-database migrations to PostgreSQL.
+Capture, replay, and compare PostgreSQL workloads. Validate configuration changes, server migrations, capacity planning, and cross-database migrations with confidence.
 
-## Features
+```mermaid
+graph LR
+    A[Capture] -->|.wkl profile| B[Replay]
+    B -->|results.wkl| C[Compare]
+    C --> D{Pass/Fail}
+    D -->|Pass| E[Deploy]
+    D -->|Fail| F[Investigate]
 
-- **Multiple capture methods** -- PG CSV logs, wire protocol proxy, MySQL slow query logs, AWS RDS/Aurora
-- **Transaction-aware replay** -- tracks BEGIN/COMMIT/ROLLBACK boundaries, auto-rollback on failure
-- **Read-only mode** -- strip DML for safe replay against production replicas
-- **Speed control** -- compress or stretch timing between queries
-- **Scaled benchmark** -- duplicate sessions N times with staggered offsets for load testing
-- **Per-category scaling** -- scale Analytical, Transactional, Mixed, and Bulk workloads independently
-- **Workload classification** -- categorize sessions as Analytical, Transactional, Mixed, or Bulk
-- **PII masking** -- strip string and numeric literals from captured SQL
-- **Comparison reports** -- per-query latency regression detection with threshold evaluation and exit codes
-- **A/B variant testing** -- compare replay performance across different database targets
-- **CI/CD pipeline** -- TOML-driven automation with Docker provisioning, JUnit XML output, and pass/fail thresholds
-- **Cross-database capture** -- capture from MySQL and transform SQL to PostgreSQL-compatible syntax
-- **Web dashboard** -- browser-based UI for managing workloads, running replays, and viewing reports
-- **Capacity planning** -- throughput QPS, latency percentiles, error rates at scale
+    style A fill:#4a9eff,stroke:#333,color:#fff
+    style B fill:#4a9eff,stroke:#333,color:#fff
+    style C fill:#4a9eff,stroke:#333,color:#fff
+    style D fill:#ffa726,stroke:#333,color:#fff
+    style E fill:#66bb6a,stroke:#333,color:#fff
+    style F fill:#ef5350,stroke:#333,color:#fff
+```
+
+---
 
 ## Quick Start
 
+### Prerequisites
+
+- **Rust** toolchain (1.70+): [Install via rustup](https://rustup.rs/)
+- **PostgreSQL** target database for replay
+- *Optional:* `aws` CLI (for RDS capture), Docker (for CI/CD provisioning)
+
+### Install & Build
+
 ```bash
-# Build
+git clone https://github.com/your-org/pg-retest.git
+cd pg-retest
 cargo build --release
 
-# 1. Capture workload from PG CSV logs
-pg-retest capture --source-log /path/to/postgresql.csv --output workload.wkl
+# Binary is at ./target/release/pg-retest
+# Optionally copy to your PATH:
+cp target/release/pg-retest /usr/local/bin/
+```
 
-# 2. Replay against target database
-pg-retest replay --workload workload.wkl --target "host=localhost dbname=mydb user=postgres"
+### 3-Step Workflow
 
-# 3. Compare results
-pg-retest compare --source workload.wkl --replay results.wkl --json report.json
+```bash
+# Step 1: Capture workload from PostgreSQL CSV logs
+pg-retest capture \
+  --source-log /path/to/postgresql.csv \
+  --output workload.wkl
 
+# Step 2: Replay against a target database
+pg-retest replay \
+  --workload workload.wkl \
+  --target "host=localhost dbname=mydb user=postgres" \
+  --output results.wkl
+
+# Step 3: Compare and get a report
+pg-retest compare \
+  --source workload.wkl \
+  --replay results.wkl \
+  --json report.json \
+  --fail-on-regression
+```
+
+### Other Quick Commands
+
+```bash
 # Inspect a workload profile
 pg-retest inspect workload.wkl
 
+# Inspect with classification breakdown
+pg-retest inspect workload.wkl --classify
+
 # Launch the web dashboard
 pg-retest web --port 8080
+
+# Run a full CI/CD pipeline from config
+pg-retest run --config .pg-retest.toml
+
+# AI-assisted tuning (dry-run by default)
+pg-retest tune \
+  --workload workload.wkl \
+  --target "host=localhost dbname=mydb user=postgres" \
+  --provider claude
 ```
 
-## Web Dashboard
+---
 
-pg-retest includes a browser-based dashboard for managing the full capture/replay/compare workflow without the command line.
+## Architecture
 
-```bash
-pg-retest web --port 8080 --data-dir ./data
+```mermaid
+flowchart TB
+    subgraph Capture["Capture Sources"]
+        PG[PG CSV Logs]
+        PROXY[Wire Protocol Proxy]
+        MYSQL[MySQL Slow Log]
+        RDS[AWS RDS/Aurora]
+    end
+
+    subgraph Core["Core Engine"]
+        WKL[(workload.wkl<br/>MessagePack v2)]
+        REPLAY[Replay Engine<br/>Tokio async]
+        CLASSIFY[Classifier<br/>Analytical/Transactional<br/>Mixed/Bulk]
+    end
+
+    subgraph Analysis["Analysis & Reports"]
+        COMPARE[Compare]
+        CAPACITY[Capacity Report]
+        AB[A/B Variant]
+        JUNIT[JUnit XML]
+        THRESH[Threshold Check]
+    end
+
+    subgraph AI["AI-Powered"]
+        TRANSFORM[Workload Transform<br/>Analyze → Plan → Apply]
+        TUNER[Tuning Advisor<br/>Config/Index/Query/Schema]
+    end
+
+    subgraph Providers["LLM Providers"]
+        CLAUDE[Claude]
+        OPENAI[OpenAI]
+        GEMINI[Gemini]
+        BEDROCK[Bedrock]
+        OLLAMA[Ollama]
+    end
+
+    PG --> WKL
+    PROXY --> WKL
+    MYSQL --> WKL
+    RDS --> WKL
+    WKL --> REPLAY
+    WKL --> CLASSIFY
+    REPLAY --> COMPARE
+    REPLAY --> CAPACITY
+    REPLAY --> AB
+    COMPARE --> THRESH
+    COMPARE --> JUNIT
+    THRESH --> PASS{Pass/Fail}
+
+    WKL --> TRANSFORM
+    TRANSFORM --> WKL
+    TUNER --> REPLAY
+
+    TRANSFORM --> Providers
+    TUNER --> Providers
+
+    style PG fill:#336791,stroke:#333,color:#fff
+    style PROXY fill:#336791,stroke:#333,color:#fff
+    style MYSQL fill:#4479a1,stroke:#333,color:#fff
+    style RDS fill:#ff9900,stroke:#333,color:#fff
+    style WKL fill:#2e7d32,stroke:#333,color:#fff
+    style REPLAY fill:#1565c0,stroke:#333,color:#fff
+    style TUNER fill:#7b1fa2,stroke:#333,color:#fff
+    style TRANSFORM fill:#7b1fa2,stroke:#333,color:#fff
 ```
 
-Open `http://localhost:8080` in your browser. The dashboard includes 9 pages:
+### Data Flow
 
-- **Dashboard** -- overview of workloads, recent runs, and status
-- **Workloads** -- upload, import, inspect, classify, and delete workload profiles
-- **Proxy** -- start/stop the capture proxy with live traffic view via WebSocket
-- **Replay** -- configure and launch replays with real-time progress updates
-- **A/B Testing** -- run A/B comparisons across database variants
-- **Compare** -- view comparison reports with charts
-- **Pipeline** -- configure and run CI/CD pipelines
-- **History** -- browse historical runs with filtering and trends
-- **Help** -- reference documentation
+```mermaid
+sequenceDiagram
+    participant Source as Source DB
+    participant Capture as pg-retest capture
+    participant Profile as workload.wkl
+    participant Replay as pg-retest replay
+    participant Target as Target DB
+    participant Compare as pg-retest compare
+    participant Report as Report (JSON/JUnit)
 
-The dashboard uses WebSocket for real-time updates (proxy traffic, replay progress, pipeline status). Workload profiles (`.wkl` files) are stored on disk; metadata is tracked in an embedded SQLite database. The frontend uses Alpine.js, Chart.js, and Tailwind CSS loaded via CDN -- no frontend build step required.
+    Source->>Capture: SQL logs / proxy traffic
+    Capture->>Profile: Serialize (MessagePack)
+    Profile->>Replay: Load workload
+    Replay->>Target: Execute queries<br/>(parallel sessions)
+    Target->>Replay: Results + timing
+    Replay->>Compare: results.wkl
+    Profile->>Compare: Original timing
+    Compare->>Report: Latency diff, regressions,<br/>error rate, pass/fail
+```
+
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Multi-source capture** | PG CSV logs, wire protocol proxy, MySQL slow logs, AWS RDS/Aurora |
+| **Transaction-aware replay** | BEGIN/COMMIT/ROLLBACK boundaries, auto-rollback on failure |
+| **Read-only mode** | Strip DML for safe replay against production replicas |
+| **Speed control** | Compress or stretch inter-query timing (0.1x to 10x) |
+| **Scaled benchmark** | Duplicate sessions Nx with staggered offsets |
+| **Per-category scaling** | Scale Analytical, Transactional, Mixed, Bulk independently |
+| **PII masking** | Strip string/numeric literals from SQL (`--mask-values`) |
+| **Comparison reports** | Per-query latency regression detection with thresholds |
+| **A/B variant testing** | Compare performance across database targets |
+| **CI/CD pipeline** | TOML config, Docker provisioning, JUnit XML, exit codes |
+| **Cross-DB capture** | MySQL slow log capture with automatic SQL transform |
+| **Web dashboard** | 11-page SPA with real-time WebSocket updates |
+| **AI workload transform** | Reshape workloads with AI (scale, inject, remove queries) |
+| **AI-assisted tuning** | LLM-powered config, index, query, and schema recommendations |
+| **Capacity planning** | Throughput QPS, latency percentiles, error rates at scale |
+
+---
+
+## Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `capture` | Capture workload from PostgreSQL logs, MySQL logs, or RDS |
+| `replay` | Replay a captured workload against a target database |
+| `compare` | Compare source workload with replay results |
+| `inspect` | Inspect a workload profile (optionally with classification) |
+| `proxy` | Run a capture proxy between clients and PostgreSQL |
+| `run` | Run full CI/CD pipeline from TOML config |
+| `ab` | A/B test across different database targets |
+| `web` | Launch the web dashboard |
+| `transform` | AI-powered workload transformation (analyze/plan/apply) |
+| `tune` | AI-assisted database tuning |
+
+---
 
 ## Capture Methods
 
-pg-retest supports four capture backends. All produce the same `.wkl` workload profile format, which can be replayed interchangeably.
+pg-retest supports four capture backends. All produce the same `.wkl` workload profile format.
+
+```mermaid
+graph TD
+    subgraph Sources
+        A[PG CSV Log<br/><code>--source-type pg-csv</code>]
+        B[Wire Protocol Proxy<br/><code>pg-retest proxy</code>]
+        C[MySQL Slow Log<br/><code>--source-type mysql-slow</code>]
+        D[AWS RDS/Aurora<br/><code>--source-type rds</code>]
+    end
+
+    A --> E[(workload.wkl)]
+    B --> E
+    C --> E
+    D --> E
+
+    E --> F[Replay / Compare / Transform / Tune]
+
+    style E fill:#2e7d32,stroke:#333,color:#fff
+```
 
 ### PostgreSQL CSV Log Capture
 
@@ -82,9 +260,8 @@ pg-retest capture \
   --mask-values
 ```
 
-#### PostgreSQL Logging Setup
-
-pg-retest captures workload by parsing PostgreSQL CSV logs. You need to configure your PostgreSQL server to produce these logs.
+<details>
+<summary><strong>PostgreSQL Logging Setup</strong></summary>
 
 **Check current settings:**
 
@@ -162,6 +339,8 @@ ls -la /path/to/data/log/*.csv
 
 Logging with `log_min_duration_statement = 0` has minimal overhead on most workloads (typically <2% throughput impact). For extremely high-throughput systems (>50k queries/sec), consider setting `log_min_duration_statement = 1` to skip sub-millisecond queries, or capturing during off-peak windows.
 
+</details>
+
 ### Proxy Capture
 
 A PostgreSQL wire protocol proxy that sits between your application and database, capturing all SQL traffic with zero application changes.
@@ -172,7 +351,6 @@ pg-retest proxy \
   --target localhost:5432 \
   --output workload.wkl \
   --pool-size 100 \
-  --pool-timeout 30 \
   --mask-values
 ```
 
@@ -219,6 +397,8 @@ pg-retest capture \
 
 Requires the `aws` CLI to be installed and configured with appropriate IAM permissions. If `--rds-log-file` is omitted, the most recent log file is used. Large log files (>1MB) are downloaded in paginated chunks.
 
+---
+
 ## Replay
 
 The replay engine reads a workload profile and replays it against a target PostgreSQL instance, preserving connection parallelism and inter-query timing.
@@ -227,59 +407,15 @@ The replay engine reads a workload profile and replays it against a target Postg
 pg-retest replay --workload workload.wkl --target "host=localhost dbname=mydb user=postgres"
 ```
 
-### Read-Write Mode (default)
+### Replay Modes
 
-Replays all captured queries including INSERT, UPDATE, DELETE. Use a backup or snapshot of your database -- DML will modify data.
-
-### Read-Only Mode
-
-Strips all DML (INSERT, UPDATE, DELETE), DDL (CREATE, ALTER, DROP), and transaction control (BEGIN, COMMIT, ROLLBACK), replaying only SELECT queries. Safe to run against production data.
-
-```bash
-pg-retest replay --workload workload.wkl --target "..." --read-only
-```
-
-### Speed Control
-
-Compress or stretch timing gaps between queries:
-
-```bash
-# 2x faster (halves wait times between queries)
-pg-retest replay --workload workload.wkl --target "..." --speed 2.0
-
-# Half speed (doubles wait times)
-pg-retest replay --workload workload.wkl --target "..." --speed 0.5
-```
-
-### Scaled Benchmark
-
-Duplicate sessions N times for load testing:
-
-```bash
-# 4x the original sessions, staggered 500ms apart
-pg-retest replay --workload workload.wkl --target "..." --scale 4 --stagger-ms 500
-```
-
-This produces a capacity planning report with throughput (queries/sec), latency percentiles, and error rates.
-
-Note: scaling write workloads executes DML multiple times and changes data state. A safety warning is printed when scaling with DML queries present.
-
-### Per-Category Scaling
-
-Scale different workload categories independently for targeted capacity testing:
-
-```bash
-pg-retest replay \
-  --workload workload.wkl \
-  --target "..." \
-  --scale-analytical 2 \
-  --scale-transactional 4 \
-  --scale-mixed 1 \
-  --scale-bulk 0 \
-  --stagger-ms 500
-```
-
-Per-category scaling is mutually exclusive with uniform `--scale N`. If any category flag is set, per-category mode is used and unspecified categories default to 1x.
+| Mode | Flag | Description |
+|------|------|-------------|
+| Read-write | *(default)* | Replays all queries including DML. Use a backup/snapshot. |
+| Read-only | `--read-only` | Strips DML/DDL/transactions. Safe for production replicas. |
+| Scaled | `--scale N` | Duplicates sessions Nx with `--stagger-ms` offset. |
+| Per-category | `--scale-analytical 2` | Scale workload categories independently. |
+| Speed-adjusted | `--speed 2.0` | Compress (>1) or stretch (<1) inter-query timing. |
 
 ### Transaction-Aware Replay
 
@@ -289,9 +425,9 @@ pg-retest tracks transaction boundaries (BEGIN/COMMIT/ROLLBACK) during capture a
 - If a query inside a transaction fails, the replay engine automatically issues a ROLLBACK and skips remaining queries in that transaction
 - COMMIT for a failed transaction is converted to a no-op
 
-## Compare
+---
 
-The compare command produces a terminal summary and optional JSON report:
+## Compare
 
 ```bash
 pg-retest compare \
@@ -320,18 +456,25 @@ pg-retest compare \
 | 1 | FAIL -- regressions detected (with `--fail-on-regression`) |
 | 2 | FAIL -- query errors detected (with `--fail-on-error`) |
 
-When both flags are set, errors take priority over regressions.
+---
 
-### Threshold Evaluation
+## A/B Variant Testing
 
-The CI/CD pipeline supports detailed threshold checks:
+Compare replay performance across two or more database targets -- useful for evaluating configuration changes, version upgrades, or hardware differences.
 
-| Threshold | Description |
-|-----------|-------------|
-| `p95_max_ms` | Maximum allowed P95 latency in milliseconds |
-| `p99_max_ms` | Maximum allowed P99 latency in milliseconds |
-| `error_rate_max_pct` | Maximum allowed error rate as a percentage |
-| `regression_max_count` | Maximum number of individual query regressions allowed |
+```bash
+pg-retest ab \
+  --workload workload.wkl \
+  --variant "pg16-default=host=db1 dbname=app user=postgres" \
+  --variant "pg16-tuned=host=db2 dbname=app user=postgres" \
+  --read-only \
+  --threshold 20 \
+  --json ab_report.json
+```
+
+Each variant is defined as `label=connection_string`. At least two variants are required. The workload is replayed sequentially against each target, and results are compared with per-query regression detection and winner determination by average latency.
+
+---
 
 ## CI/CD Pipeline
 
@@ -339,6 +482,22 @@ Automate the full capture-provision-replay-compare cycle with a single TOML conf
 
 ```bash
 pg-retest run --config .pg-retest.toml
+```
+
+```mermaid
+flowchart LR
+    A[Capture] --> B[Provision<br/>Docker]
+    B --> C[Replay]
+    C --> D[Compare]
+    D --> E[Threshold<br/>Check]
+    E --> F[Report<br/>JSON + JUnit]
+
+    style A fill:#4a9eff,stroke:#333,color:#fff
+    style B fill:#4a9eff,stroke:#333,color:#fff
+    style C fill:#4a9eff,stroke:#333,color:#fff
+    style D fill:#4a9eff,stroke:#333,color:#fff
+    style E fill:#ffa726,stroke:#333,color:#fff
+    style F fill:#66bb6a,stroke:#333,color:#fff
 ```
 
 ### Pipeline Config Example
@@ -374,11 +533,14 @@ junit_xml = "results.xml"
 
 ### Pipeline Sections
 
-- **[capture]** -- specify a `workload` path (skip capture) or `source_log` to capture from. Supports `source_type` values: `pg-csv`, `mysql-slow`, `rds`.
-- **[provision]** -- Docker provisioning (`backend = "docker"`) with optional `restore_from` for database backup restore. Or use `connection_string` to point at a pre-existing target.
-- **[replay]** -- speed, read-only mode, scaling options. If no `[provision]` section, specify `target` here.
-- **[thresholds]** -- pass/fail criteria for CI integration.
-- **[output]** -- `json_report` for detailed JSON output, `junit_xml` for CI test result integration.
+| Section | Purpose |
+|---------|---------|
+| `[capture]` | Specify `workload` path (skip capture) or `source_log` to capture. Supports `source_type`: `pg-csv`, `mysql-slow`, `rds`. |
+| `[provision]` | Docker provisioning with optional `restore_from`. Or use `connection_string` for a pre-existing target. |
+| `[replay]` | Speed, read-only mode, scaling options. If no `[provision]`, specify `target` here. |
+| `[thresholds]` | Pass/fail criteria: `p95_max_ms`, `p99_max_ms`, `error_rate_max_pct`, `regression_max_count`. |
+| `[output]` | `json_report` for JSON output, `junit_xml` for CI integration. |
+| `[[variants]]` | A/B testing mode: bypasses provisioning, replays against each variant target. |
 
 ### Pipeline Exit Codes
 
@@ -391,7 +553,8 @@ junit_xml = "results.xml"
 | 4 | Provision error |
 | 5 | Replay error |
 
-### Minimal Pipeline Config
+<details>
+<summary><strong>Minimal Pipeline Config</strong></summary>
 
 If you already have a captured workload and a running target database:
 
@@ -403,7 +566,10 @@ workload = "existing.wkl"
 target = "host=localhost dbname=test user=postgres"
 ```
 
-### MySQL Pipeline Config
+</details>
+
+<details>
+<summary><strong>MySQL Pipeline Config</strong></summary>
 
 ```toml
 [capture]
@@ -416,40 +582,10 @@ target = "host=localhost dbname=test user=postgres"
 read_only = true
 ```
 
-### Per-Category Scaling Pipeline Config
+</details>
 
-```toml
-[capture]
-workload = "workload.wkl"
-
-[replay]
-target = "host=localhost dbname=test user=postgres"
-scale_analytical = 2
-scale_transactional = 4
-scale_mixed = 1
-scale_bulk = 0
-stagger_ms = 500
-```
-
-## A/B Variant Testing
-
-Compare replay performance across two or more database targets -- useful for evaluating configuration changes, version upgrades, or hardware differences.
-
-### CLI Usage
-
-```bash
-pg-retest ab \
-  --workload workload.wkl \
-  --variant "pg16-default=host=db1 dbname=app user=postgres" \
-  --variant "pg16-tuned=host=db2 dbname=app user=postgres" \
-  --read-only \
-  --threshold 20 \
-  --json ab_report.json
-```
-
-Each variant is defined as `label=connection_string`. At least two variants are required. The workload is replayed sequentially against each target, and results are compared with per-query regression detection and winner determination by average latency.
-
-### A/B via Pipeline Config
+<details>
+<summary><strong>A/B Variant Pipeline Config</strong></summary>
 
 ```toml
 [capture]
@@ -468,11 +604,139 @@ speed = 1.0
 read_only = true
 ```
 
-When `[[variants]]` are present, the pipeline bypasses normal provisioning and runs sequential replay against each variant target.
+</details>
+
+<details>
+<summary><strong>Per-Category Scaling Pipeline Config</strong></summary>
+
+```toml
+[capture]
+workload = "workload.wkl"
+
+[replay]
+target = "host=localhost dbname=test user=postgres"
+scale_analytical = 2
+scale_transactional = 4
+scale_mixed = 1
+scale_bulk = 0
+stagger_ms = 500
+```
+
+</details>
+
+---
+
+## AI-Powered Workload Transform
+
+Reshape workloads using AI-generated transform plans. The 3-layer architecture keeps AI in an advisory role while execution is fully deterministic.
+
+```mermaid
+flowchart LR
+    A[workload.wkl] --> B[Analyze<br/>Deterministic]
+    B --> C[Plan<br/>AI-Powered]
+    C --> D[Apply<br/>Deterministic]
+    D --> E[transformed.wkl]
+
+    style B fill:#1565c0,stroke:#333,color:#fff
+    style C fill:#7b1fa2,stroke:#333,color:#fff
+    style D fill:#1565c0,stroke:#333,color:#fff
+```
+
+```bash
+# Step 1: Analyze workload (no AI needed)
+pg-retest transform analyze --workload workload.wkl --json
+
+# Step 2: Generate a transform plan via AI
+pg-retest transform plan \
+  --workload workload.wkl \
+  --prompt "Simulate 3x Black Friday traffic on the orders table group" \
+  --provider claude \
+  --output transform-plan.toml
+
+# Step 3: Apply the plan (deterministic, reproducible)
+pg-retest transform apply \
+  --workload workload.wkl \
+  --plan transform-plan.toml \
+  --output transformed.wkl
+```
+
+Transform operations: **Scale** (duplicate sessions by weight), **Inject** (add new queries), **InjectSession** (add new session), **Remove** (drop query groups).
+
+---
+
+## AI-Assisted Tuning
+
+Iterative tuning loop: collect database context, get LLM recommendations, validate safety, apply, replay, compare, auto-rollback on regression.
+
+```mermaid
+flowchart TD
+    A[Collect PG Context<br/>pg_settings, schema,<br/>pg_stat_statements, EXPLAIN] --> B[LLM Advisor]
+    B --> C[Safety Validation<br/>Allowlist check]
+    C --> D{Safe?}
+    D -->|Yes| E[Apply Changes]
+    D -->|No| B
+    E --> F[Replay Workload]
+    F --> G[Compare vs Baseline]
+    G --> H{p95 regressed >5%?}
+    H -->|Yes| I[Auto-Rollback]
+    H -->|No| J{More iterations?}
+    I --> J
+    J -->|Yes| A
+    J -->|No| K[Tuning Report]
+
+    style A fill:#1565c0,stroke:#333,color:#fff
+    style B fill:#7b1fa2,stroke:#333,color:#fff
+    style C fill:#ffa726,stroke:#333,color:#fff
+    style E fill:#66bb6a,stroke:#333,color:#fff
+    style I fill:#ef5350,stroke:#333,color:#fff
+    style K fill:#2e7d32,stroke:#333,color:#fff
+```
+
+```bash
+# Dry-run (default): see recommendations without applying
+pg-retest tune \
+  --workload workload.wkl \
+  --target "host=localhost dbname=mydb user=postgres" \
+  --provider claude \
+  --max-iterations 3 \
+  --hint "optimize for OLTP latency"
+
+# Apply recommendations (use --apply)
+pg-retest tune \
+  --workload workload.wkl \
+  --target "host=localhost dbname=mydb user=postgres" \
+  --provider openai \
+  --apply \
+  --json tuning-report.json
+```
+
+**Recommendation types:** Config changes (`ALTER SYSTEM`), Index creation, Query rewrites, Schema changes.
+
+**Safety:** Production hostname check blocks targets containing "prod", "production", "primary", "master", "main" (bypass with `--force`). Allowlist permits ~41 safe PG parameters; dangerous params are blocked.
+
+**LLM Providers:** Claude, OpenAI, Gemini, Bedrock, Ollama. Set API keys via `--api-key` flag or environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`). Bedrock uses standard AWS credentials.
+
+---
+
+## Web Dashboard
+
+A browser-based dashboard for managing the full workflow without the command line.
+
+```bash
+pg-retest web --port 8080 --data-dir ./data
+# Open http://localhost:8080
+```
+
+**11 pages:** Dashboard, Workloads, Proxy, Replay, A/B Testing, Compare, Pipeline, History, Transform, Tuning, Help.
+
+- Real-time updates via WebSocket (proxy traffic, replay progress, tuning iterations)
+- SQLite metadata storage with `.wkl` files as source of truth on disk
+- Frontend: Alpine.js + Chart.js + Tailwind CSS via CDN (no build step)
+- Tuning page shows history with expandable recommendations and comparison stats
+
+---
 
 ## Workload Classification
-
-Classify captured workloads to understand their characteristics:
 
 ```bash
 pg-retest inspect workload.wkl --classify
@@ -485,13 +749,15 @@ pg-retest inspect workload.wkl --classify
 | **Bulk** | >80% writes, <=2 transactions (data loading) |
 | **Mixed** | Everything else |
 
-Classification outputs per-session breakdown with read/write percentages, average latency, and transaction count. Classification drives per-category scaling behavior.
+Classification drives per-category scaling behavior.
+
+---
 
 ## PII Masking
 
 The `--mask-values` flag (available on `capture` and `proxy` commands) replaces string literals with `$S` and numeric literals with `$N`:
 
-```
+```sql
 -- Original:
 SELECT * FROM users WHERE email = 'alice@corp.com' AND id = 42
 
@@ -499,7 +765,9 @@ SELECT * FROM users WHERE email = 'alice@corp.com' AND id = 42
 SELECT * FROM users WHERE email = $S AND id = $N
 ```
 
-Masking uses a hand-written character-level state machine (not regex) to correctly handle SQL edge cases: escaped quotes (`''`), dollar-quoted strings (`$$...$$`), and numbers inside identifiers (`table3`, `col1`).
+Masking uses a hand-written character-level state machine (not regex) to correctly handle SQL edge cases: escaped quotes (`''`), dollar-quoted strings (`$$...$$`), and numbers inside identifiers.
+
+---
 
 ## Workload Profile Format
 
@@ -516,9 +784,9 @@ The profile contains:
 
 v2 profiles include transaction IDs on queries. v1 profiles (without transaction support) are fully backward compatible.
 
-The `capture_method` field distinguishes sources: `"csv_log"` for PG CSV logs, `"mysql_slow_log"` for MySQL, `"rds"` for AWS RDS/Aurora, and proxy capture.
+---
 
-## Building
+## Building & Testing
 
 ```bash
 # Debug build
@@ -527,7 +795,7 @@ cargo build
 # Release build (optimized)
 cargo build --release
 
-# Run tests (174 tests)
+# Run all tests (216 tests)
 cargo test
 
 # Run a single test file
@@ -536,37 +804,23 @@ cargo test --test profile_io_test
 # Run a single test function
 cargo test --test compare_test test_comparison_regressions
 
-# Run with verbose logging
-RUST_LOG=debug pg-retest capture --source-log ...
-
-# Lint
+# Lint (zero warnings)
 cargo clippy
 
 # Format
 cargo fmt
 ```
 
-## Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `capture` | Capture workload from PostgreSQL logs, MySQL logs, or RDS |
-| `replay` | Replay a captured workload against a target database |
-| `compare` | Compare source workload with replay results |
-| `inspect` | Inspect a workload profile file (optionally with classification) |
-| `proxy` | Run a capture proxy between clients and PostgreSQL |
-| `run` | Run full CI/CD pipeline from TOML config |
-| `ab` | Compare replay performance across different database targets |
-| `web` | Launch the web dashboard |
+---
 
 ## Documentation
 
 Design documents and implementation plans are available in the `docs/` directory:
 
-- `docs/plans/` -- Design and implementation plans for each milestone
 - `docs/plans/2026-03-03-pg-retest-m1-design.md` -- M1 Capture & Replay design
 - `docs/plans/2026-03-04-m3-cicd-design.md` -- M3 CI/CD integration design
 - `docs/plans/2026-03-04-m4-mysql-capture-design.md` -- M4 MySQL capture design
 - `docs/plans/2026-03-04-proxy-gateway-design.md` -- Proxy capture design
 - `docs/plans/2026-03-05-gap-closure-design.md` -- Per-category scaling, A/B testing, RDS capture
-- `docs/plans/2026-03-04-m5-ai-tuning-design.md` -- M5 AI-Assisted Tuning design (planned)
+- `docs/plans/2026-03-07-workload-transform-design.md` -- AI workload transform design
+- `docs/plans/2026-03-07-m5-ai-tuning-design-v2.md` -- M5 AI-Assisted Tuning design
