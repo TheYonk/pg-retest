@@ -1,11 +1,11 @@
 # pg-retest
 
 ![Rust](https://img.shields.io/badge/language-Rust-orange?logo=rust)
-![Edition](https://img.shields.io/badge/edition-2021-blue)
 ![Version](https://img.shields.io/badge/version-0.2.0-green)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-12%2B-336791?logo=postgresql&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-216-brightgreen)
 ![Clippy](https://img.shields.io/badge/clippy-zero%20warnings-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-blue)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 
 Capture, replay, and compare PostgreSQL workloads. Validate configuration changes, server migrations, capacity planning, and cross-database migrations with confidence.
 
