@@ -141,7 +141,7 @@
                     <div id="dashboard-content"></div>
                 </div>
                 <!-- Demo -->
-                <div x-show="page === 'demo'" x-data="demoPage()" x-effect="if (page === 'demo') load()">
+                <div x-show="page === 'demo'" x-data="demoPage()" x-init="load()" x-effect="if ($store.app.page === 'demo') load()">
                     <div id="demo-content"></div>
                 </div>
                 <!-- Workloads -->

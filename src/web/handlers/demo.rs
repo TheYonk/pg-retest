@@ -27,17 +27,24 @@ fn demo_state() -> &'static Arc<RwLock<DemoState>> {
 /// GET /api/v1/demo/config
 pub async fn get_config(State(state): State<AppState>) -> Json<serde_json::Value> {
     match &state.demo_config {
-        Some(dc) => Json(json!({
-            "enabled": true,
-            "db_a_host": dc.db_a,
-            "db_b_host": dc.db_b,
-            "workload_path": dc.workload_path.to_string_lossy(),
-            "init_sql_path": dc.init_sql_path.to_string_lossy(),
-        })),
+        Some(dc) => {
+            // Extract hostname only from connection strings — never expose credentials
+            let extract_host = |conn: &str| -> String {
+                conn.split_whitespace()
+                    .find(|s| s.starts_with("host="))
+                    .map(|s| s.trim_start_matches("host=").to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            };
+            Json(json!({
+                "enabled": true,
+                "db_a": extract_host(&dc.db_a),
+                "db_b": extract_host(&dc.db_b),
+            }))
+        }
         None => Json(json!({
             "enabled": false,
-            "db_a_host": "",
-            "db_b_host": "",
+            "db_a": "",
+            "db_b": "",
         })),
     }
 }
@@ -356,13 +363,12 @@ async fn run_step_scale(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Scale 2x across all classes
-    let scale_factor = 2u32;
+    // Per-category scaling: analytical 2x, transactional 4x, mixed 1x, bulk 1x
     let mut class_scales = StdHashMap::new();
-    class_scales.insert(WorkloadClass::Analytical, scale_factor);
-    class_scales.insert(WorkloadClass::Transactional, scale_factor);
-    class_scales.insert(WorkloadClass::Mixed, scale_factor);
-    class_scales.insert(WorkloadClass::Bulk, scale_factor);
+    class_scales.insert(WorkloadClass::Analytical, 2u32);
+    class_scales.insert(WorkloadClass::Transactional, 4u32);
+    class_scales.insert(WorkloadClass::Mixed, 1u32);
+    class_scales.insert(WorkloadClass::Bulk, 1u32);
 
     let scaled_sessions =
         crate::replay::scaling::scale_sessions_by_class(&profile, &class_scales, 100);
@@ -392,7 +398,7 @@ async fn run_step_scale(
     let elapsed_us = start.elapsed().as_micros() as u64;
 
     let scale_report =
-        crate::compare::capacity::compute_scale_report(&results, scale_factor, elapsed_us);
+        crate::compare::capacity::compute_scale_report(&results, 3, elapsed_us);
     let value = serde_json::to_value(&scale_report).map_err(|e| {
         tracing::error!("Failed to serialize scale report: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
