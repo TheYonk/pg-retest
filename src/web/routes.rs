@@ -72,10 +72,23 @@ pub fn build_router(state: AppState) -> Router {
         )
         // Tuning
         .route("/tuning/start", post(handlers::tuning::start_tuning))
-        .route("/tuning/reports", get(handlers::tuning::list_tuning_reports))
-        .route("/tuning/reports/{id}", get(handlers::tuning::get_tuning_report))
+        .route(
+            "/tuning/reports",
+            get(handlers::tuning::list_tuning_reports),
+        )
+        .route(
+            "/tuning/reports/{id}",
+            get(handlers::tuning::get_tuning_report),
+        )
         .route("/tuning/{id}", get(handlers::tuning::get_tuning_status))
         .route("/tuning/{id}/cancel", post(handlers::tuning::cancel_tuning))
+        // Demo
+        .route("/demo/config", get(handlers::demo::get_config))
+        .route("/demo/reset-db", post(handlers::demo::reset_db))
+        .route("/demo/wizard/{step}", post(handlers::demo::run_wizard_step))
+        .route("/demo/wizard/{step}", get(handlers::demo::get_wizard_step))
+        .route("/demo/scenario/{name}", post(handlers::demo::run_scenario))
+        .route("/demo/scenario/{name}", get(handlers::demo::get_scenario))
         // Runs
         .route("/runs", get(handlers::runs::list_runs))
         .route("/runs/stats", get(handlers::runs::run_stats))
