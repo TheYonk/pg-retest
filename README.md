@@ -9,6 +9,21 @@
 
 Capture, replay, and compare PostgreSQL workloads. Validate configuration changes, server migrations, capacity planning, and cross-database migrations with confidence.
 
+---
+
+## Why pg-retest?
+
+| | |
+|---|---|
+| **🔄 Pre-Migration Validation** | Replay production traffic against your new datacenter, hardware, or cloud target before cutting over. Know it works — don't hope. |
+| **⬆️ Version & Patch Testing** | Upgrading PostgreSQL 15 → 16? Replay your exact workload against the new version and catch regressions before they hit production. |
+| **⚙️ Configuration Benchmarking** | Changed `shared_buffers` or `work_mem`? Compare before and after with real queries, not synthetic benchmarks. |
+| **☁️ Cloud Provider Evaluation** | RDS vs. Aurora vs. AlloyDB vs. self-hosted — replay identical traffic against each and let the numbers decide. |
+| **📈 Capacity Planning** | Scale your workload 2x, 5x, 10x to find where things break — before Black Friday finds it for you. |
+| **🚦 CI/CD Regression Gates** | Automated pass/fail on every schema migration or config change. Catch performance regressions in the pipeline, not in production. |
+| **🔀 Cross-Database Migration** | Moving from MySQL to PostgreSQL? Capture your MySQL workload, transform the SQL, and validate it runs correctly on PG. |
+| **🤖 AI-Assisted Optimization** | Get LLM-powered tuning recommendations — then validate every change against your real workload with automatic rollback on regression. |
+
 ```mermaid
 graph LR
     A[Capture] -->|.wkl profile| B[Replay]
