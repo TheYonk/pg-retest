@@ -10,7 +10,7 @@ async fn test_health_endpoint() {
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     web::db::init_db(&conn).unwrap();
 
-    let state = web::state::AppState::new(conn, data_path);
+    let state = web::state::AppState::new(conn, data_path, None);
     let app = web::routes::build_router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -45,7 +45,7 @@ async fn test_workload_list_empty() {
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     web::db::init_db(&conn).unwrap();
 
-    let state = web::state::AppState::new(conn, data_path);
+    let state = web::state::AppState::new(conn, data_path, None);
     let app = web::routes::build_router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -78,7 +78,7 @@ async fn test_runs_list_empty() {
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     web::db::init_db(&conn).unwrap();
 
-    let state = web::state::AppState::new(conn, data_path);
+    let state = web::state::AppState::new(conn, data_path, None);
     let app = web::routes::build_router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -111,7 +111,7 @@ async fn test_tasks_endpoint() {
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     web::db::init_db(&conn).unwrap();
 
-    let state = web::state::AppState::new(conn, data_path);
+    let state = web::state::AppState::new(conn, data_path, None);
     let app = web::routes::build_router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -144,7 +144,7 @@ async fn test_pipeline_validate() {
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     web::db::init_db(&conn).unwrap();
 
-    let state = web::state::AppState::new(conn, data_path);
+    let state = web::state::AppState::new(conn, data_path, None);
     let app = web::routes::build_router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -196,7 +196,7 @@ async fn test_static_files_served() {
     let conn = rusqlite::Connection::open(&db_path).unwrap();
     web::db::init_db(&conn).unwrap();
 
-    let state = web::state::AppState::new(conn, data_path);
+    let state = web::state::AppState::new(conn, data_path, None);
     let app = web::routes::build_router(state).fallback(web::static_handler);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
