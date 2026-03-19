@@ -2,3 +2,4 @@
 *.wkl
 *.swp
 .DS_Store
+.worktrees/
