@@ -35,16 +35,19 @@ pub struct ControlState {
     pub total_queries: u64,
     pub started_at: Instant,
     pub capture_cmd_tx: Option<tokio::sync::mpsc::UnboundedSender<CaptureCommand>>,
+    pub staging_db: Option<super::staging::StagingDb>,
 }
 
 type SharedState = Arc<RwLock<ControlState>>;
 
-/// Build the control router with all three endpoints.
+/// Build the control router with all endpoints.
 pub fn build_control_router(state: SharedState) -> Router {
     Router::new()
         .route("/status", get(status_handler))
         .route("/start-capture", post(start_capture_handler))
         .route("/stop-capture", post(stop_capture_handler))
+        .route("/recover", post(recover_handler))
+        .route("/discard", post(discard_handler))
         .with_state(state)
 }
 
@@ -133,6 +136,79 @@ async fn stop_capture_handler(
     }
 }
 
+async fn recover_handler(State(state): State<SharedState>) -> Json<serde_json::Value> {
+    let s = state.read().await;
+    let staging_db = match &s.staging_db {
+        Some(db) => db.clone(),
+        None => return Json(serde_json::json!({ "error": "No staging database configured" })),
+    };
+    drop(s);
+
+    match staging_db.list_orphaned_captures().await {
+        Ok(orphans) if orphans.is_empty() => {
+            Json(serde_json::json!({ "status": "no orphaned captures found" }))
+        }
+        Ok(orphans) => {
+            let mut recovered = Vec::new();
+            for (capture_id, count) in &orphans {
+                match staging_db.read_capture(capture_id).await {
+                    Ok(rows) => {
+                        let profile =
+                            super::capture::build_profile_from_staging(rows, "recovered", false);
+                        let filename = format!("recovered-{}.wkl", capture_id);
+                        let path = std::path::PathBuf::from(&filename);
+                        if let Err(e) = crate::profile::io::write_profile(&path, &profile) {
+                            tracing::error!("Failed to write recovered profile: {}", e);
+                            continue;
+                        }
+                        let _ = staging_db.clear_capture(capture_id).await;
+                        recovered.push(serde_json::json!({
+                            "capture_id": capture_id,
+                            "queries": count,
+                            "output": filename,
+                        }));
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to read capture {}: {}", capture_id, e);
+                    }
+                }
+            }
+            Json(serde_json::json!({ "status": "recovered", "captures": recovered }))
+        }
+        Err(e) => Json(serde_json::json!({ "error": format!("Failed to list orphans: {}", e) })),
+    }
+}
+
+async fn discard_handler(State(state): State<SharedState>) -> Json<serde_json::Value> {
+    let s = state.read().await;
+    let staging_db = match &s.staging_db {
+        Some(db) => db.clone(),
+        None => return Json(serde_json::json!({ "error": "No staging database configured" })),
+    };
+    drop(s);
+
+    match staging_db.list_orphaned_captures().await {
+        Ok(orphans) if orphans.is_empty() => {
+            Json(serde_json::json!({ "status": "no orphaned captures to discard" }))
+        }
+        Ok(orphans) => {
+            let mut total_discarded = 0u64;
+            for (capture_id, _) in &orphans {
+                match staging_db.clear_capture(capture_id).await {
+                    Ok(count) => total_discarded += count as u64,
+                    Err(e) => tracing::error!("Failed to discard capture {}: {}", capture_id, e),
+                }
+            }
+            Json(serde_json::json!({
+                "status": "discarded",
+                "captures_discarded": orphans.len(),
+                "rows_deleted": total_discarded,
+            }))
+        }
+        Err(e) => Json(serde_json::json!({ "error": format!("Failed to list orphans: {}", e) })),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,6 +230,7 @@ mod tests {
             total_queries: 42,
             started_at: Instant::now(),
             capture_cmd_tx: if with_tx { Some(tx) } else { None },
+            staging_db: None,
         }))
     }
 
@@ -233,6 +310,7 @@ mod tests {
             total_queries: 0,
             started_at: Instant::now(),
             capture_cmd_tx: None,
+            staging_db: None,
         }));
         let app = build_control_router(state);
 

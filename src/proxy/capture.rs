@@ -277,8 +277,11 @@ pub(crate) async fn run_staging_collector(
                     if let Some((sql, start)) = pending.remove(&session_id) {
                         if let Some((user, database, session_start)) = session_meta.get(&session_id)
                         {
-                            let offset = start.duration_since(*session_start);
-                            let duration = timestamp.duration_since(start);
+                            let offset = start
+                                .checked_duration_since(*session_start)
+                                .unwrap_or_default();
+                            let duration =
+                                timestamp.checked_duration_since(start).unwrap_or_default();
                             batch.push(StagingRow {
                                 capture_id: capture_id.clone(),
                                 session_id: session_id as i64,
@@ -303,8 +306,11 @@ pub(crate) async fn run_staging_collector(
                     if let Some((sql, start)) = pending.remove(&session_id) {
                         if let Some((user, database, session_start)) = session_meta.get(&session_id)
                         {
-                            let offset = start.duration_since(*session_start);
-                            let duration = timestamp.duration_since(start);
+                            let offset = start
+                                .checked_duration_since(*session_start)
+                                .unwrap_or_default();
+                            let duration =
+                                timestamp.checked_duration_since(start).unwrap_or_default();
                             debug!("Staging: query error in session {session_id}: {message}");
                             batch.push(StagingRow {
                                 capture_id: capture_id.clone(),
