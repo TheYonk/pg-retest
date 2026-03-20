@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -21,7 +22,7 @@ pub async fn handle_connection(
     pool: Arc<SessionPool>,
     session_id: u64,
     capture_tx: mpsc::UnboundedSender<CaptureEvent>,
-    no_capture: bool,
+    no_capture: Arc<AtomicBool>,
     metrics_tx: Option<mpsc::UnboundedSender<CaptureEvent>>,
 ) {
     if let Err(e) = handle_connection_inner(
@@ -43,7 +44,7 @@ async fn handle_connection_inner(
     pool: Arc<SessionPool>,
     session_id: u64,
     capture_tx: mpsc::UnboundedSender<CaptureEvent>,
-    no_capture: bool,
+    no_capture: Arc<AtomicBool>,
     metrics_tx: Option<mpsc::UnboundedSender<CaptureEvent>>,
 ) -> Result<()> {
     // ── Phase 1: Startup ────────────────────────────────────────────
@@ -97,7 +98,7 @@ async fn handle_connection_inner(
     }
 
     // Send capture session start
-    if !no_capture {
+    if !no_capture.load(Ordering::Relaxed) {
         let event = CaptureEvent::SessionStart {
             session_id,
             user,
@@ -131,6 +132,7 @@ async fn handle_connection_inner(
         let capture_tx = capture_tx.clone();
         let metrics_tx = metrics_tx.clone();
         let stmt_cache = stmt_cache.clone();
+        let no_capture = no_capture.clone();
         async move {
             relay_client_to_server(
                 client_read,
@@ -232,7 +234,7 @@ async fn relay_client_to_server(
     session_id: u64,
     capture_tx: mpsc::UnboundedSender<CaptureEvent>,
     stmt_cache: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
-    no_capture: bool,
+    no_capture: Arc<AtomicBool>,
     metrics_tx: Option<mpsc::UnboundedSender<CaptureEvent>>,
 ) -> Result<()> {
     loop {
@@ -241,7 +243,7 @@ async fn relay_client_to_server(
             None => break, // Client disconnected
         };
 
-        if !no_capture {
+        if !no_capture.load(Ordering::Relaxed) {
             match msg.msg_type {
                 b'Q' => {
                     // Simple query
@@ -314,7 +316,7 @@ async fn relay_server_to_client(
     mut client: BufWriter<WriteHalf<TcpStream>>,
     session_id: u64,
     capture_tx: mpsc::UnboundedSender<CaptureEvent>,
-    no_capture: bool,
+    no_capture: Arc<AtomicBool>,
     metrics_tx: Option<mpsc::UnboundedSender<CaptureEvent>>,
 ) -> Result<()> {
     loop {
@@ -323,7 +325,7 @@ async fn relay_server_to_client(
             None => break, // Server disconnected
         };
 
-        if !no_capture {
+        if !no_capture.load(Ordering::Relaxed) {
             match msg.msg_type {
                 b'C' => {
                     // CommandComplete — query finished

@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -15,7 +15,7 @@ pub async fn run_listener(
     listener: TcpListener,
     pool: Arc<SessionPool>,
     capture_tx: mpsc::UnboundedSender<CaptureEvent>,
-    no_capture: bool,
+    no_capture: Arc<AtomicBool>,
     metrics_tx: Option<mpsc::UnboundedSender<CaptureEvent>>,
 ) -> Result<()> {
     let session_counter = AtomicU64::new(1);
@@ -28,6 +28,7 @@ pub async fn run_listener(
         let pool = pool.clone();
         let capture_tx = capture_tx.clone();
         let metrics_tx = metrics_tx.clone();
+        let no_capture = no_capture.clone();
 
         info!("Session {session_id}: accepted connection from {peer_addr}");
 
