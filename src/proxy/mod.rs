@@ -197,12 +197,30 @@ async fn run_proxy_persistent(config: ProxyConfig) -> Result<()> {
     let active_staging_tx: Arc<tokio::sync::Mutex<Option<mpsc::UnboundedSender<CaptureEvent>>>> =
         Arc::new(tokio::sync::Mutex::new(None));
 
-    // Spawn a forwarder task that reads from persistent_capture_rx and forwards
-    // to the active staging collector (if any).
+    // Spawn a forwarder task that reads from persistent_capture_rx, updates
+    // ControlState counters, and forwards to the active staging collector.
     let active_staging_tx_clone = active_staging_tx.clone();
+    let control_state_fwd = control_state.clone();
     let forwarder_handle = tokio::spawn(async move {
         let mut rx = persistent_capture_rx;
         while let Some(event) = rx.recv().await {
+            // Update ControlState counters for status endpoint
+            match &event {
+                CaptureEvent::SessionStart { .. } => {
+                    let mut cs = control_state_fwd.write().await;
+                    cs.active_sessions += 1;
+                }
+                CaptureEvent::SessionEnd { .. } => {
+                    let mut cs = control_state_fwd.write().await;
+                    cs.active_sessions = cs.active_sessions.saturating_sub(1);
+                }
+                CaptureEvent::QueryComplete { .. } | CaptureEvent::QueryError { .. } => {
+                    let mut cs = control_state_fwd.write().await;
+                    cs.total_queries += 1;
+                }
+                _ => {}
+            }
+            // Forward to active staging collector (if any)
             let guard = active_staging_tx_clone.lock().await;
             if let Some(ref tx) = *guard {
                 let _ = tx.send(event);
