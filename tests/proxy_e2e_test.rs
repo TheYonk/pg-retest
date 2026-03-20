@@ -15,13 +15,16 @@ use tokio_postgres::NoTls;
 use tokio_util::sync::CancellationToken;
 
 const TARGET_ADDR: &str = "localhost:5441";
-const CONN_STR: &str = "host=localhost port=5441 dbname=pg_retest_e2e user=sales_demo_app password=salesdemo123";
+const CONN_STR: &str =
+    "host=localhost port=5441 dbname=pg_retest_e2e user=sales_demo_app password=salesdemo123";
 
 /// Check if the test database is reachable.
 async fn require_pg() -> bool {
     match tokio_postgres::connect(CONN_STR, NoTls).await {
         Ok((client, conn)) => {
-            tokio::spawn(async move { let _ = conn.await; });
+            tokio::spawn(async move {
+                let _ = conn.await;
+            });
             let _ = client.simple_query("SELECT 1").await;
             true
         }
@@ -57,25 +60,29 @@ async fn start_proxy(
     let config = ProxyConfig {
         listen_addr: format!("127.0.0.1:{}", port),
         target_addr: TARGET_ADDR.to_string(),
-        output: output_path.clone(),
+        output: Some(output_path.clone()),
         pool_size: 10,
         pool_timeout_secs: 5,
         mask_values,
         no_capture: false,
         duration: None,
+        persistent: false,
+        control_port: None,
     };
 
     let cancel_token = CancellationToken::new();
     let (metrics_tx, metrics_rx) = mpsc::unbounded_channel();
 
     let token_clone = cancel_token.clone();
-    let handle = tokio::spawn(async move {
-        run_proxy_managed(config, token_clone, metrics_tx).await
-    });
+    let handle =
+        tokio::spawn(async move { run_proxy_managed(config, token_clone, metrics_tx).await });
 
     // Wait for proxy to be ready (accept connections)
     for _ in 0..50 {
-        if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await.is_ok() {
+        if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .is_ok()
+        {
             break;
         }
         sleep(Duration::from_millis(50)).await;
@@ -88,7 +95,9 @@ async fn start_proxy(
 
 #[tokio::test]
 async fn test_proxy_basic_relay() {
-    if !require_pg().await { return; }
+    if !require_pg().await {
+        return;
+    }
 
     let tmp_dir = TempDir::new().unwrap();
     let (cancel_token, _metrics_rx, handle, port, _output) = start_proxy(&tmp_dir, false).await;
@@ -102,19 +111,27 @@ async fn test_proxy_basic_relay() {
     let (client, conn) = tokio_postgres::connect(&proxy_conn_str, NoTls)
         .await
         .expect("Should connect through proxy");
-    tokio::spawn(async move { let _ = conn.await; });
+    tokio::spawn(async move {
+        let _ = conn.await;
+    });
 
     // Run queries through the proxy
-    let rows = client.query("SELECT count(*) FROM test_orders", &[]).await
+    let rows = client
+        .query("SELECT count(*) FROM test_orders", &[])
+        .await
         .expect("SELECT through proxy should work");
     let count: i64 = rows[0].get(0);
     assert!(count >= 3, "Should see test_orders data through proxy");
 
     // Run a few more queries
-    client.simple_query("SELECT product, quantity FROM test_orders ORDER BY id").await
+    client
+        .simple_query("SELECT product, quantity FROM test_orders ORDER BY id")
+        .await
         .expect("Second query through proxy should work");
 
-    client.simple_query("SELECT 42 AS answer").await
+    client
+        .simple_query("SELECT 42 AS answer")
+        .await
         .expect("Simple query through proxy should work");
 
     // Disconnect client, then stop proxy
@@ -123,18 +140,28 @@ async fn test_proxy_basic_relay() {
     cancel_token.cancel();
 
     let result = handle.await.expect("Proxy task should complete");
-    let profile = result.expect("Proxy should return Ok").expect("Should have captured profile");
+    let profile = result
+        .expect("Proxy should return Ok")
+        .expect("Should have captured profile");
 
     // Verify capture produced a valid profile
-    assert!(profile.metadata.total_sessions >= 1, "Should have at least 1 session");
-    assert!(profile.metadata.total_queries >= 3, "Should have captured at least 3 queries");
+    assert!(
+        profile.metadata.total_sessions >= 1,
+        "Should have at least 1 session"
+    );
+    assert!(
+        profile.metadata.total_queries >= 3,
+        "Should have captured at least 3 queries"
+    );
 }
 
 // ─── Proxy captures correct SQL text ────────────────────────────────
 
 #[tokio::test]
 async fn test_proxy_capture_sql_content() {
-    if !require_pg().await { return; }
+    if !require_pg().await {
+        return;
+    }
 
     let tmp_dir = TempDir::new().unwrap();
     let (cancel_token, _metrics_rx, handle, port, output) = start_proxy(&tmp_dir, false).await;
@@ -147,10 +174,15 @@ async fn test_proxy_capture_sql_content() {
     let (client, conn) = tokio_postgres::connect(&proxy_conn_str, NoTls)
         .await
         .expect("Should connect through proxy");
-    tokio::spawn(async move { let _ = conn.await; });
+    tokio::spawn(async move {
+        let _ = conn.await;
+    });
 
     // Run specific queries we can look for in the capture
-    client.simple_query("SELECT 'proxy_capture_test_marker'").await.unwrap();
+    client
+        .simple_query("SELECT 'proxy_capture_test_marker'")
+        .await
+        .unwrap();
     client.simple_query("SELECT 123 + 456").await.unwrap();
 
     drop(client);
@@ -161,33 +193,48 @@ async fn test_proxy_capture_sql_content() {
     let profile = result.expect("Should be Ok").expect("Should have profile");
 
     // Find our marker queries in the captured workload
-    let all_sqls: Vec<&str> = profile.sessions.iter()
+    let all_sqls: Vec<&str> = profile
+        .sessions
+        .iter()
         .flat_map(|s| s.queries.iter().map(|q| q.sql.as_str()))
         .collect();
 
     assert!(
-        all_sqls.iter().any(|sql| sql.contains("proxy_capture_test_marker")),
-        "Should capture the marker query. Captured SQLs: {:?}", all_sqls
+        all_sqls
+            .iter()
+            .any(|sql| sql.contains("proxy_capture_test_marker")),
+        "Should capture the marker query. Captured SQLs: {:?}",
+        all_sqls
     );
     assert!(
         all_sqls.iter().any(|sql| sql.contains("123 + 456")),
-        "Should capture the math query. Captured SQLs: {:?}", all_sqls
+        "Should capture the math query. Captured SQLs: {:?}",
+        all_sqls
     );
 
     // Verify the .wkl file was written to disk
-    assert!(output.exists(), "Profile should be written to disk at {:?}", output);
+    assert!(
+        output.exists(),
+        "Profile should be written to disk at {:?}",
+        output
+    );
 
     // Verify we can read it back
-    let loaded = pg_retest::profile::io::read_profile(&output)
-        .expect("Should read back the .wkl file");
-    assert_eq!(loaded.metadata.total_sessions, profile.metadata.total_sessions);
+    let loaded =
+        pg_retest::profile::io::read_profile(&output).expect("Should read back the .wkl file");
+    assert_eq!(
+        loaded.metadata.total_sessions,
+        profile.metadata.total_sessions
+    );
 }
 
 // ─── Proxy with PII masking ─────────────────────────────────────────
 
 #[tokio::test]
 async fn test_proxy_capture_with_masking() {
-    if !require_pg().await { return; }
+    if !require_pg().await {
+        return;
+    }
 
     let tmp_dir = TempDir::new().unwrap();
     let (cancel_token, _metrics_rx, handle, port, _output) = start_proxy(&tmp_dir, true).await;
@@ -200,10 +247,15 @@ async fn test_proxy_capture_with_masking() {
     let (client, conn) = tokio_postgres::connect(&proxy_conn_str, NoTls)
         .await
         .expect("Should connect through proxy");
-    tokio::spawn(async move { let _ = conn.await; });
+    tokio::spawn(async move {
+        let _ = conn.await;
+    });
 
     // Queries with literals that should be masked
-    client.simple_query("SELECT * FROM test_orders WHERE product = 'widget' AND quantity = 10").await.unwrap();
+    client
+        .simple_query("SELECT * FROM test_orders WHERE product = 'widget' AND quantity = 10")
+        .await
+        .unwrap();
 
     drop(client);
     sleep(Duration::from_millis(200)).await;
@@ -213,27 +265,33 @@ async fn test_proxy_capture_with_masking() {
     let profile = result.expect("Should be Ok").expect("Should have profile");
 
     // Find our query — literals should be masked
-    let all_sqls: Vec<&str> = profile.sessions.iter()
+    let all_sqls: Vec<&str> = profile
+        .sessions
+        .iter()
         .flat_map(|s| s.queries.iter().map(|q| q.sql.as_str()))
         .collect();
 
-    let masked_query = all_sqls.iter()
+    let masked_query = all_sqls
+        .iter()
         .find(|sql| sql.contains("test_orders") && sql.contains("product"))
         .expect("Should find the test_orders query in capture");
 
     // String literal 'widget' should be replaced with $S
     assert!(
         !masked_query.contains("widget"),
-        "String literal should be masked: {}", masked_query
+        "String literal should be masked: {}",
+        masked_query
     );
     assert!(
         masked_query.contains("$S"),
-        "Should contain $S placeholder: {}", masked_query
+        "Should contain $S placeholder: {}",
+        masked_query
     );
     // Numeric literal 10 should be replaced with $N
     assert!(
         masked_query.contains("$N"),
-        "Should contain $N placeholder: {}", masked_query
+        "Should contain $N placeholder: {}",
+        masked_query
     );
 }
 
@@ -241,7 +299,9 @@ async fn test_proxy_capture_with_masking() {
 
 #[tokio::test]
 async fn test_proxy_concurrent_clients() {
-    if !require_pg().await { return; }
+    if !require_pg().await {
+        return;
+    }
 
     let tmp_dir = TempDir::new().unwrap();
     let (cancel_token, _metrics_rx, handle, port, _output) = start_proxy(&tmp_dir, false).await;
@@ -259,12 +319,16 @@ async fn test_proxy_concurrent_clients() {
             let (client, conn) = tokio_postgres::connect(&conn_str, NoTls)
                 .await
                 .expect("Concurrent client should connect");
-            tokio::spawn(async move { let _ = conn.await; });
+            tokio::spawn(async move {
+                let _ = conn.await;
+            });
 
             // Each client runs a few queries
             for j in 0..3 {
                 let sql = format!("SELECT {} AS client_{}_query_{}", i * 100 + j, i, j);
-                client.simple_query(&sql).await
+                client
+                    .simple_query(&sql)
+                    .await
                     .unwrap_or_else(|e| panic!("Client {} query {} failed: {}", i, j, e));
             }
             drop(client);
@@ -300,7 +364,9 @@ async fn test_proxy_concurrent_clients() {
 
 #[tokio::test]
 async fn test_proxy_no_capture_mode() {
-    if !require_pg().await { return; }
+    if !require_pg().await {
+        return;
+    }
 
     let tmp_dir = TempDir::new().unwrap();
     let port = find_free_port().await;
@@ -309,25 +375,29 @@ async fn test_proxy_no_capture_mode() {
     let config = ProxyConfig {
         listen_addr: format!("127.0.0.1:{}", port),
         target_addr: TARGET_ADDR.to_string(),
-        output: output_path.clone(),
+        output: Some(output_path.clone()),
         pool_size: 10,
         pool_timeout_secs: 5,
         mask_values: false,
         no_capture: true,
         duration: None,
+        persistent: false,
+        control_port: None,
     };
 
     let cancel_token = CancellationToken::new();
     let (metrics_tx, _metrics_rx) = mpsc::unbounded_channel();
 
     let token_clone = cancel_token.clone();
-    let handle = tokio::spawn(async move {
-        run_proxy_managed(config, token_clone, metrics_tx).await
-    });
+    let handle =
+        tokio::spawn(async move { run_proxy_managed(config, token_clone, metrics_tx).await });
 
     // Wait for proxy to be ready
     for _ in 0..50 {
-        if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await.is_ok() {
+        if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .is_ok()
+        {
             break;
         }
         sleep(Duration::from_millis(50)).await;
@@ -342,9 +412,14 @@ async fn test_proxy_no_capture_mode() {
     let (client, conn) = tokio_postgres::connect(&proxy_conn_str, NoTls)
         .await
         .expect("Should connect through proxy in no-capture mode");
-    tokio::spawn(async move { let _ = conn.await; });
+    tokio::spawn(async move {
+        let _ = conn.await;
+    });
 
-    let rows = client.query("SELECT 1 AS val", &[]).await.expect("Query should work");
+    let rows = client
+        .query("SELECT 1 AS val", &[])
+        .await
+        .expect("Query should work");
     let val: i32 = rows[0].get(0);
     assert_eq!(val, 1);
 
@@ -361,7 +436,9 @@ async fn test_proxy_no_capture_mode() {
 
 #[tokio::test]
 async fn test_proxy_duration_shutdown() {
-    if !require_pg().await { return; }
+    if !require_pg().await {
+        return;
+    }
 
     let tmp_dir = TempDir::new().unwrap();
     let port = find_free_port().await;
@@ -370,25 +447,29 @@ async fn test_proxy_duration_shutdown() {
     let config = ProxyConfig {
         listen_addr: format!("127.0.0.1:{}", port),
         target_addr: TARGET_ADDR.to_string(),
-        output: output_path.clone(),
+        output: Some(output_path.clone()),
         pool_size: 10,
         pool_timeout_secs: 5,
         mask_values: false,
         no_capture: false,
         duration: Some(std::time::Duration::from_secs(1)),
+        persistent: false,
+        control_port: None,
     };
 
     let cancel_token = CancellationToken::new();
     let (metrics_tx, _metrics_rx) = mpsc::unbounded_channel();
 
     let token_clone = cancel_token.clone();
-    let handle = tokio::spawn(async move {
-        run_proxy_managed(config, token_clone, metrics_tx).await
-    });
+    let handle =
+        tokio::spawn(async move { run_proxy_managed(config, token_clone, metrics_tx).await });
 
     // Wait for proxy to be ready
     for _ in 0..50 {
-        if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await.is_ok() {
+        if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .is_ok()
+        {
             break;
         }
         sleep(Duration::from_millis(50)).await;
@@ -403,7 +484,9 @@ async fn test_proxy_duration_shutdown() {
     let (client, conn) = tokio_postgres::connect(&proxy_conn_str, NoTls)
         .await
         .expect("Should connect");
-    tokio::spawn(async move { let _ = conn.await; });
+    tokio::spawn(async move {
+        let _ = conn.await;
+    });
     client.simple_query("SELECT 'duration_test'").await.unwrap();
     drop(client);
 
@@ -412,7 +495,14 @@ async fn test_proxy_duration_shutdown() {
     let result = handle.await.expect("Proxy task should complete");
     let elapsed = start.elapsed();
 
-    assert!(elapsed < Duration::from_secs(5), "Proxy should shut down promptly, took {:?}", elapsed);
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "Proxy should shut down promptly, took {:?}",
+        elapsed
+    );
     let profile = result.expect("Should be Ok").expect("Should have profile");
-    assert!(profile.metadata.total_queries >= 1, "Should have captured at least 1 query");
+    assert!(
+        profile.metadata.total_queries >= 1,
+        "Should have captured at least 1 query"
+    );
 }

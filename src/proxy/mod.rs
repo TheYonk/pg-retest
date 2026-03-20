@@ -23,12 +23,14 @@ use crate::profile::WorkloadProfile;
 pub struct ProxyConfig {
     pub listen_addr: String,
     pub target_addr: String,
-    pub output: PathBuf,
+    pub output: Option<PathBuf>,
     pub pool_size: usize,
     pub pool_timeout_secs: u64,
     pub mask_values: bool,
     pub no_capture: bool,
     pub duration: Option<std::time::Duration>,
+    pub persistent: bool,
+    pub control_port: Option<u16>,
 }
 
 /// Run the proxy server (CLI mode — signal-based shutdown).
@@ -101,8 +103,12 @@ pub async fn run_proxy(config: ProxyConfig) -> Result<()> {
         profile.metadata.total_queries, profile.metadata.total_sessions
     );
 
-    io::write_profile(&config.output, &profile)?;
-    info!("Wrote workload profile to {}", config.output.display());
+    if let Some(ref output) = config.output {
+        io::write_profile(output, &profile)?;
+        info!("Wrote workload profile to {}", output.display());
+    } else {
+        info!("No output path specified — skipping profile write");
+    }
 
     Ok(())
 }
@@ -183,8 +189,10 @@ pub async fn run_proxy_managed(
     );
 
     // Write profile to disk
-    io::write_profile(&config.output, &profile)?;
-    info!("Wrote workload profile to {}", config.output.display());
+    if let Some(ref output) = config.output {
+        io::write_profile(output, &profile)?;
+        info!("Wrote workload profile to {}", output.display());
+    }
 
     Ok(Some(profile))
 }

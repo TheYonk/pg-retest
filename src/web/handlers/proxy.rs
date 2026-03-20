@@ -78,12 +78,14 @@ pub async fn start_proxy(
     let config = crate::proxy::ProxyConfig {
         listen_addr: req.listen.clone(),
         target_addr: req.target.clone(),
-        output: output_path,
+        output: Some(output_path),
         pool_size: req.pool_size,
         pool_timeout_secs: 30,
         mask_values: req.mask_values,
         no_capture: req.no_capture,
         duration: None,
+        persistent: false,
+        control_port: None,
     };
 
     let listen = req.listen.clone();

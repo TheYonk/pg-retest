@@ -46,6 +46,10 @@ pub enum Commands {
 
     /// Run AI-assisted database tuning
     Tune(TuneArgs),
+
+    /// Control a running persistent proxy
+    #[command(name = "proxy-ctl")]
+    ProxyCtl(ProxyCtlArgs),
 }
 
 #[derive(clap::Args)]
@@ -181,9 +185,9 @@ pub struct ProxyArgs {
     #[arg(long)]
     pub target: String,
 
-    /// Output workload profile path (.wkl)
-    #[arg(short, long, default_value = "workload.wkl")]
-    pub output: PathBuf,
+    /// Output workload profile path (.wkl). Not required in persistent mode.
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
 
     /// Maximum server connections in the pool
     #[arg(long, default_value_t = 100)]
@@ -204,6 +208,14 @@ pub struct ProxyArgs {
     /// Capture duration (e.g., 60s, 5m). If not set, runs until Ctrl+C.
     #[arg(long)]
     pub duration: Option<String>,
+
+    /// Run proxy in persistent mode (stays running, capture toggled separately)
+    #[arg(long, default_value_t = false)]
+    pub persistent: bool,
+
+    /// Control port for persistent mode (default: 9091)
+    #[arg(long, default_value_t = 9091)]
+    pub control_port: u16,
 }
 
 #[derive(clap::Args)]
@@ -378,4 +390,32 @@ pub struct TuneArgs {
     /// Replay only SELECT queries
     #[arg(long, default_value_t = false)]
     pub read_only: bool,
+}
+
+#[derive(clap::Args)]
+pub struct ProxyCtlArgs {
+    /// Address of the running proxy's control endpoint (host:port)
+    #[arg(long, default_value = "localhost:9091")]
+    pub proxy: String,
+
+    #[command(subcommand)]
+    pub action: ProxyCtlAction,
+}
+
+#[derive(Subcommand)]
+pub enum ProxyCtlAction {
+    /// Show proxy status
+    Status,
+    /// Start capturing queries
+    StartCapture,
+    /// Stop capturing and produce a .wkl file
+    StopCapture {
+        /// Output path for the workload file
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Recover orphaned capture data from a crash
+    Recover,
+    /// Discard orphaned capture data
+    Discard,
 }
