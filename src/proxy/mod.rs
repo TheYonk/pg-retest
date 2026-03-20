@@ -3,6 +3,7 @@ pub mod connection;
 pub mod listener;
 pub mod pool;
 pub mod protocol;
+pub mod staging;
 
 use std::path::PathBuf;
 use std::sync::Arc;

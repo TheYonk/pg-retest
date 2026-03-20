@@ -70,6 +70,23 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             report_json TEXT NOT NULL,
             created_at TEXT DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS capture_staging (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            capture_id TEXT NOT NULL,
+            session_id INTEGER NOT NULL,
+            user_name TEXT,
+            database_name TEXT,
+            sql TEXT NOT NULL,
+            kind TEXT,
+            start_offset_us INTEGER NOT NULL,
+            duration_us INTEGER NOT NULL,
+            is_error INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT,
+            timestamp_us INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_staging_capture ON capture_staging(capture_id);
         ",
     )?;
     Ok(())
