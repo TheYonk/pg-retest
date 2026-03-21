@@ -5,6 +5,7 @@ pub mod safety;
 pub mod types;
 
 use anyhow::Result;
+use tracing::{info, warn};
 
 use crate::compare;
 use crate::replay::{self, ReplayMode};
@@ -63,7 +64,7 @@ pub async fn run_tuning_with_events(
     });
 
     // 6. Connect to target
-    let client = connect(&config.target).await?;
+    let client = connect(&config.target, config.tls.clone()).await?;
 
     // 7. Collect baseline: replay once to get baseline metrics
     let replay_mode = if config.read_only {
@@ -72,32 +73,37 @@ pub async fn run_tuning_with_events(
         ReplayMode::ReadWrite
     };
 
-    println!("  Collecting baseline replay...");
+    info!("Collecting baseline replay...");
     send_event(TuningEvent::BaselineStarted);
-    let baseline_results =
-        replay::session::run_replay(&profile, &config.target, replay_mode, config.speed).await?;
+    let baseline_results = replay::session::run_replay(
+        &profile,
+        &config.target,
+        replay_mode,
+        config.speed,
+        None,
+        config.tls.clone(),
+    )
+    .await?;
 
-    let baseline_report = compare::compute_comparison(&profile, &baseline_results, 20.0);
+    let baseline_report =
+        compare::compute_comparison(&profile, &baseline_results, 20.0, Some(replay_mode));
 
     let mut iterations: Vec<TuningIteration> = Vec::new();
     let mut all_changes: Vec<AppliedChange> = Vec::new();
 
     for i in 1..=config.max_iterations {
-        println!(
-            "\n  === Tuning Iteration {}/{} ===",
-            i, config.max_iterations
-        );
+        info!("=== Tuning Iteration {}/{} ===", i, config.max_iterations);
         send_event(TuningEvent::IterationStarted {
             iteration: i,
             max_iterations: config.max_iterations,
         });
 
         // Collect context (re-collect each iteration to see impact of changes)
-        println!("  Collecting PG context...");
+        info!("Collecting PG context...");
         let context = collect_context(&client, &profile, 10).await?;
 
         // Call LLM
-        println!("  Requesting recommendations from {}...", advisor.name());
+        info!("Requesting recommendations from {}...", advisor.name());
         let recommendations = advisor
             .recommend(
                 &context,
@@ -108,11 +114,11 @@ pub async fn run_tuning_with_events(
             .await?;
 
         if recommendations.is_empty() {
-            println!("  No recommendations from LLM. Stopping.");
+            info!("No recommendations from LLM. Stopping.");
             break;
         }
 
-        println!("  Received {} recommendations:", recommendations.len());
+        info!("Received {} recommendations:", recommendations.len());
         send_event(TuningEvent::RecommendationsReceived {
             iteration: i,
             recommendations: recommendations.clone(),
@@ -124,14 +130,14 @@ pub async fn run_tuning_with_events(
         // Validate safety
         let (safe_recs, rejected) = validate_recommendations(&recommendations);
         if !rejected.is_empty() {
-            println!("\n  Rejected {} recommendations:", rejected.len());
+            warn!("Rejected {} recommendations:", rejected.len());
             for (rec, reason) in &rejected {
-                println!("    - {}: {}", rec_summary(rec), reason);
+                warn!("  - {}: {}", rec_summary(rec), reason);
             }
         }
 
         if safe_recs.is_empty() {
-            println!("  All recommendations rejected by safety layer. Stopping.");
+            warn!("All recommendations rejected by safety layer. Stopping.");
             iterations.push(TuningIteration {
                 iteration: i,
                 recommendations,
@@ -144,7 +150,7 @@ pub async fn run_tuning_with_events(
 
         // Dry-run: stop after printing
         if !config.apply {
-            println!("\n  Dry-run mode — not applying changes. Use --apply to execute.");
+            info!("Dry-run mode — not applying changes. Use --apply to execute.");
             iterations.push(TuningIteration {
                 iteration: i,
                 recommendations,
@@ -156,12 +162,12 @@ pub async fn run_tuning_with_events(
         }
 
         // Apply recommendations
-        println!("\n  Applying {} recommendations...", safe_recs.len());
+        info!("Applying {} recommendations...", safe_recs.len());
         let applied = apply_all(&client, &safe_recs).await;
 
         let successes = applied.iter().filter(|a| a.success).count();
         let failures = applied.iter().filter(|a| !a.success).count();
-        println!("  Applied: {} success, {} failed", successes, failures);
+        info!("Applied: {} success, {} failed", successes, failures);
 
         for a in &applied {
             send_event(TuningEvent::ChangeApplied {
@@ -169,8 +175,8 @@ pub async fn run_tuning_with_events(
                 change: a.clone(),
             });
             if !a.success {
-                println!(
-                    "    FAILED: {} — {}",
+                warn!(
+                    "FAILED: {} — {}",
                     rec_summary(&a.recommendation),
                     a.error.as_deref().unwrap_or("unknown")
                 );
@@ -180,7 +186,7 @@ pub async fn run_tuning_with_events(
         all_changes.extend(applied.clone());
 
         if successes == 0 {
-            println!("  No changes applied successfully. Stopping.");
+            warn!("No changes applied successfully. Stopping.");
             iterations.push(TuningIteration {
                 iteration: i,
                 recommendations,
@@ -192,12 +198,19 @@ pub async fn run_tuning_with_events(
         }
 
         // Replay after changes
-        println!("  Replaying workload...");
-        let replay_results =
-            replay::session::run_replay(&profile, &config.target, replay_mode, config.speed)
-                .await?;
+        info!("Replaying workload...");
+        let replay_results = replay::session::run_replay(
+            &profile,
+            &config.target,
+            replay_mode,
+            config.speed,
+            None,
+            config.tls.clone(),
+        )
+        .await?;
 
-        let iter_report = compare::compute_comparison(&profile, &replay_results, 20.0);
+        let iter_report =
+            compare::compute_comparison(&profile, &replay_results, 20.0, Some(replay_mode));
 
         // Compare vs baseline
         let comparison = ComparisonSummary {
@@ -218,8 +231,8 @@ pub async fn run_tuning_with_events(
             errors_delta: iter_report.total_errors as i64 - baseline_report.total_errors as i64,
         };
 
-        println!(
-            "  Results: p50={:+.1}%, p95={:+.1}%, p99={:+.1}%",
+        info!(
+            "Results: p50={:+.1}%, p95={:+.1}%, p99={:+.1}%",
             comparison.p50_change_pct, comparison.p95_change_pct, comparison.p99_change_pct
         );
         send_event(TuningEvent::ReplayCompleted {
@@ -241,7 +254,10 @@ pub async fn run_tuning_with_events(
         let should_stop = comparison.p95_change_pct > 5.0;
 
         if should_stop {
-            println!("  p95 latency regressed by {:.1}%. Rolling back changes...", comparison.p95_change_pct);
+            warn!(
+                "p95 latency regressed by {:.1}%. Rolling back changes...",
+                comparison.p95_change_pct
+            );
             send_event(TuningEvent::RollbackStarted { iteration: i });
 
             let rollback_results = rollback_all(&client, &applied).await;
@@ -250,13 +266,21 @@ pub async fn run_tuning_with_events(
 
             for r in &rollback_results {
                 if r.success {
-                    println!("    Rolled back: {}", r.summary);
+                    info!("Rolled back: {}", r.summary);
                 } else {
-                    println!("    Rollback FAILED: {} — {}", r.summary, r.error.as_deref().unwrap_or("unknown"));
+                    warn!(
+                        "Rollback FAILED: {} — {}",
+                        r.summary,
+                        r.error.as_deref().unwrap_or("unknown")
+                    );
                 }
             }
-            println!("  Rollback: {} succeeded, {} failed", rolled_back, failed);
-            send_event(TuningEvent::RollbackCompleted { iteration: i, rolled_back, failed });
+            info!("Rollback: {} succeeded, {} failed", rolled_back, failed);
+            send_event(TuningEvent::RollbackCompleted {
+                iteration: i,
+                rolled_back,
+                failed,
+            });
 
             // Reload config after rollback
             let _ = client.batch_execute("SELECT pg_reload_conf()").await;

@@ -51,6 +51,7 @@ pub struct AppState {
     pub ws_tx: broadcast::Sender<WsMessage>,
     pub tasks: Arc<TaskManager>,
     pub demo_config: Option<DemoConfig>,
+    pub started_at: std::time::Instant,
 }
 
 impl AppState {
@@ -62,6 +63,7 @@ impl AppState {
             ws_tx,
             tasks: Arc::new(TaskManager::new()),
             demo_config,
+            started_at: std::time::Instant::now(),
         }
     }
 

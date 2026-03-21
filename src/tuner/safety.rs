@@ -95,29 +95,29 @@ pub fn is_safe_param(param: &str) -> bool {
     SAFE_CONFIG_PARAMS.iter().any(|&safe| safe == lower)
 }
 
-/// Check whether a SQL statement is blocked from execution.
-/// Returns `Some(reason)` if the statement is dangerous, `None` if it is safe.
-fn is_blocked_sql(sql: &str) -> Option<String> {
+/// Check whether a SQL statement is on the allowlist for SchemaChange execution.
+/// Only these operations are safe to auto-apply from LLM recommendations:
+/// - CREATE INDEX (including CONCURRENTLY, UNIQUE, IF NOT EXISTS)
+/// - ANALYZE
+/// - REINDEX
+///
+/// Everything else is rejected and presented as a suggestion for human review.
+pub fn is_allowed_schema_sql(sql: &str) -> bool {
     let upper = sql.trim().to_uppercase();
 
-    if upper.starts_with("DROP TABLE") {
-        return Some("DROP TABLE is not allowed".into());
-    }
-    if upper.starts_with("DROP DATABASE") {
-        return Some("DROP DATABASE is not allowed".into());
-    }
-    if upper.starts_with("DROP SCHEMA") {
-        return Some("DROP SCHEMA is not allowed".into());
-    }
-    if upper.starts_with("TRUNCATE") {
-        return Some("TRUNCATE is not allowed".into());
-    }
-    // ALTER TABLE ... DROP COLUMN
-    if upper.starts_with("ALTER TABLE") && upper.contains("DROP COLUMN") {
-        return Some("ALTER TABLE ... DROP COLUMN is not allowed".into());
+    if upper.starts_with("CREATE INDEX") || upper.starts_with("CREATE UNIQUE INDEX") {
+        return true;
     }
 
-    None
+    if upper.starts_with("ANALYZE") {
+        return true;
+    }
+
+    if upper.starts_with("REINDEX") {
+        return true;
+    }
+
+    false
 }
 
 /// Validate a list of recommendations, splitting them into safe and rejected.
@@ -141,10 +141,16 @@ pub fn validate_recommendations(
                 }
             }
             Recommendation::CreateIndex { sql, .. } => {
-                if let Some(reason) = is_blocked_sql(sql) {
-                    rejected.push((rec.clone(), reason));
-                } else {
+                if is_allowed_schema_sql(sql) {
                     safe.push(rec.clone());
+                } else {
+                    rejected.push((
+                        rec.clone(),
+                        format!(
+                            "CreateIndex SQL is not on the allowed list: {}",
+                            sql.chars().take(60).collect::<String>()
+                        ),
+                    ));
                 }
             }
             Recommendation::QueryRewrite { .. } => {
@@ -152,10 +158,16 @@ pub fn validate_recommendations(
                 safe.push(rec.clone());
             }
             Recommendation::SchemaChange { sql, .. } => {
-                if let Some(reason) = is_blocked_sql(sql) {
-                    rejected.push((rec.clone(), reason));
-                } else {
+                if is_allowed_schema_sql(sql) {
                     safe.push(rec.clone());
+                } else {
+                    rejected.push((
+                        rec.clone(),
+                        format!(
+                            "SchemaChange SQL is not on the allowed list (only CREATE INDEX, ANALYZE, REINDEX are auto-applied): {}",
+                            sql.chars().take(60).collect::<String>()
+                        ),
+                    ));
                 }
             }
         }
@@ -239,21 +251,56 @@ mod tests {
 
         // Verify reasons
         assert!(rejected[0].1.contains("not on the safe allowlist"));
-        assert!(rejected[1].1.contains("DROP TABLE"));
+        assert!(rejected[1].1.contains("not on the allowed list"));
     }
 
     #[test]
-    fn test_blocked_sql() {
-        // Should be blocked
-        assert!(is_blocked_sql("DROP TABLE users").is_some());
-        assert!(is_blocked_sql("TRUNCATE orders").is_some());
-        assert!(is_blocked_sql("ALTER TABLE users DROP COLUMN email").is_some());
-        assert!(is_blocked_sql("DROP DATABASE mydb").is_some());
-        assert!(is_blocked_sql("DROP SCHEMA public").is_some());
+    fn test_schema_change_allowlist() {
+        // Allowed operations
+        assert!(is_allowed_schema_sql("CREATE INDEX idx_foo ON bar (baz)"));
+        assert!(is_allowed_schema_sql(
+            "CREATE INDEX CONCURRENTLY idx_foo ON bar (baz)"
+        ));
+        assert!(is_allowed_schema_sql(
+            "CREATE UNIQUE INDEX idx_foo ON bar (baz)"
+        ));
+        assert!(is_allowed_schema_sql("ANALYZE users"));
+        assert!(is_allowed_schema_sql("ANALYZE"));
+        assert!(is_allowed_schema_sql("REINDEX TABLE users"));
+        assert!(is_allowed_schema_sql("REINDEX INDEX idx_foo"));
 
-        // Should be allowed
-        assert!(is_blocked_sql("CREATE INDEX idx_foo ON bar (baz)").is_none());
-        assert!(is_blocked_sql("ALTER TABLE users ADD COLUMN archived boolean").is_none());
-        assert!(is_blocked_sql("SELECT 1").is_none());
+        // Blocked operations (not on allowlist)
+        assert!(!is_allowed_schema_sql(
+            "ALTER TABLE users ADD COLUMN archived boolean"
+        ));
+        assert!(!is_allowed_schema_sql("DROP TABLE users"));
+        assert!(!is_allowed_schema_sql("CREATE TABLE foo (id int)"));
+        assert!(!is_allowed_schema_sql("TRUNCATE orders"));
+        assert!(!is_allowed_schema_sql("DROP INDEX idx_foo"));
+        assert!(!is_allowed_schema_sql(
+            "ALTER INDEX idx_foo RENAME TO idx_bar"
+        ));
+        assert!(!is_allowed_schema_sql("GRANT ALL ON TABLE users TO admin"));
+    }
+
+    #[test]
+    fn test_validate_schema_change_uses_allowlist() {
+        let recs = vec![
+            Recommendation::SchemaChange {
+                sql: "CREATE INDEX idx_test ON orders (status)".into(),
+                description: "Add index".into(),
+                rationale: "Speed up".into(),
+            },
+            Recommendation::SchemaChange {
+                sql: "ALTER TABLE users ADD COLUMN archived boolean".into(),
+                description: "Add column".into(),
+                rationale: "Feature".into(),
+            },
+        ];
+
+        let (safe, rejected) = validate_recommendations(&recs);
+        assert_eq!(safe.len(), 1);
+        assert_eq!(rejected.len(), 1);
+        assert!(rejected[0].1.contains("not on the allowed list"));
     }
 }

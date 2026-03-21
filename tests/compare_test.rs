@@ -93,7 +93,7 @@ fn make_replay_results() -> Vec<ReplayResults> {
 fn test_comparison_totals() {
     let source = make_source_profile();
     let results = make_replay_results();
-    let report = compute_comparison(&source, &results, 20.0);
+    let report = compute_comparison(&source, &results, 20.0, None);
 
     assert_eq!(report.total_queries_source, 4);
     assert_eq!(report.total_queries_replayed, 4);
@@ -104,7 +104,7 @@ fn test_comparison_totals() {
 fn test_comparison_avg_latency() {
     let source = make_source_profile();
     let results = make_replay_results();
-    let report = compute_comparison(&source, &results, 20.0);
+    let report = compute_comparison(&source, &results, 20.0, None);
 
     // Source avg: (100+200+300+5000)/4 = 1400
     assert_eq!(report.source_avg_latency_us, 1400);
@@ -116,7 +116,7 @@ fn test_comparison_avg_latency() {
 fn test_comparison_regressions() {
     let source = make_source_profile();
     let results = make_replay_results();
-    let report = compute_comparison(&source, &results, 20.0);
+    let report = compute_comparison(&source, &results, 20.0, None);
 
     // SELECT 2: 200 -> 250 = +25% (> 20% threshold = regression)
     assert!(!report.regressions.is_empty());
@@ -132,7 +132,7 @@ fn test_comparison_regressions() {
 fn test_evaluate_outcome_pass_when_no_flags() {
     let source = make_source_profile();
     let results = make_replay_results();
-    let report = compute_comparison(&source, &results, 20.0);
+    let report = compute_comparison(&source, &results, 20.0, None);
 
     // Even with regressions and errors, if flags are off, it's Pass
     let outcome = evaluate_outcome(&report, false, false);
@@ -144,7 +144,7 @@ fn test_evaluate_outcome_pass_when_no_flags() {
 fn test_evaluate_outcome_regressions() {
     let source = make_source_profile();
     let results = make_replay_results();
-    let report = compute_comparison(&source, &results, 20.0);
+    let report = compute_comparison(&source, &results, 20.0, None);
 
     let outcome = evaluate_outcome(&report, true, false);
     assert_eq!(outcome, CompareOutcome::Regressions);
@@ -155,7 +155,7 @@ fn test_evaluate_outcome_regressions() {
 fn test_evaluate_outcome_errors() {
     let source = make_source_profile();
     let results = make_replay_results();
-    let report = compute_comparison(&source, &results, 20.0);
+    let report = compute_comparison(&source, &results, 20.0, None);
 
     let outcome = evaluate_outcome(&report, false, true);
     assert_eq!(outcome, CompareOutcome::Errors);
@@ -166,7 +166,7 @@ fn test_evaluate_outcome_errors() {
 fn test_evaluate_outcome_errors_take_priority() {
     let source = make_source_profile();
     let results = make_replay_results();
-    let report = compute_comparison(&source, &results, 20.0);
+    let report = compute_comparison(&source, &results, 20.0, None);
 
     // When both flags are on, errors take priority
     let outcome = evaluate_outcome(&report, true, true);
@@ -212,7 +212,7 @@ fn test_evaluate_outcome_pass_no_regressions_no_errors() {
         }],
     }];
 
-    let report = compute_comparison(&source, &results, 20.0);
+    let report = compute_comparison(&source, &results, 20.0, None);
     let outcome = evaluate_outcome(&report, true, true);
     assert_eq!(outcome, CompareOutcome::Pass);
 }

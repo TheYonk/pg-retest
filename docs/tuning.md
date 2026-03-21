@@ -88,6 +88,18 @@ Config changes are validated against an allowlist of approximately 50 PostgreSQL
 
 Parameters not on the allowlist are blocked and reported as safety violations. This prevents the LLM from recommending changes to parameters that could cause instability, data corruption, or require a restart in unexpected ways.
 
+### API Key Validation
+
+For `claude`, `openai`, and `gemini` providers, the tuner validates that the API key is present at startup (via `--api-key` or the corresponding environment variable). If the key is missing, the command exits immediately with an error message rather than failing mid-iteration after context collection.
+
+### SchemaChange Safety
+
+Schema change recommendations are restricted to a safe subset of DDL: `CREATE INDEX`, `ANALYZE`, and `REINDEX`. Any other DDL (e.g., `ALTER TABLE`, `DROP`, `CREATE TABLE`) is rejected with an explanation of why it was blocked. This prevents the LLM from recommending destructive schema modifications.
+
+### SQL Value Escaping
+
+Config change values applied via `ALTER SYSTEM SET` are properly escaped to prevent SQL injection. String values are single-quoted with internal single quotes doubled.
+
 ### Production Hostname Check
 
 The tuner refuses to apply changes to targets whose hostname contains `prod`, `production`, `primary`, `master`, or `main`. Pass `--force` to override:
@@ -163,6 +175,9 @@ pg-retest tune [OPTIONS] --workload <PATH> --target <CONNSTRING>
 | `--apply` | `false` | Apply recommendations. Without this flag, dry-run mode is active. |
 | `--force` | `false` | Bypass the production hostname safety check. |
 | `--json <PATH>` | _(none)_ | Write the full tuning report to a JSON file. Terminal report is still printed. |
+| `--target-env <VAR>` | _(none)_ | Read the target connection string from the named environment variable instead of `--target`. |
+| `--tls-mode <MODE>` | `prefer` | TLS mode for the target connection: `disable`, `prefer`, or `require`. |
+| `--tls-ca-cert <PATH>` | _(none)_ | Path to a custom CA certificate file for TLS verification. |
 
 ### Global Options
 

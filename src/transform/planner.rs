@@ -75,9 +75,7 @@ pub fn create_planner(config: PlannerConfig) -> Box<dyn LlmPlanner> {
             api_url: config
                 .api_url
                 .unwrap_or_else(|| "https://generativelanguage.googleapis.com".into()),
-            model: config
-                .model
-                .unwrap_or_else(|| "gemini-2.5-flash".into()),
+            model: config.model.unwrap_or_else(|| "gemini-2.5-flash".into()),
         }),
         LlmProvider::Bedrock => Box::new(BedrockPlanner {
             model: config

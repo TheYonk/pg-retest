@@ -254,6 +254,10 @@ pg-retest replay [OPTIONS] --workload <PATH> --target <CONNSTRING>
 | `--scale-transactional <N>` | _(unset)_ | Scale transactional sessions by N. Enables per-category mode. |
 | `--scale-mixed <N>` | _(unset)_ | Scale mixed sessions by N. Enables per-category mode. |
 | `--scale-bulk <N>` | _(unset)_ | Scale bulk sessions by N. Enables per-category mode. |
+| `--max-connections <N>` | _(unlimited)_ | Limit the number of concurrent database connections via a semaphore. Useful when the target has a low `max_connections` setting or when replaying highly scaled workloads. |
+| `--tls-mode <MODE>` | `prefer` | TLS mode for the target connection: `disable`, `prefer`, or `require`. |
+| `--tls-ca-cert <PATH>` | _(none)_ | Path to a custom CA certificate file for TLS verification. Required when the target uses a private CA. |
+| `--target-env <VAR>` | _(none)_ | Read the target connection string from the named environment variable instead of `--target`. |
 
 ### Global Options
 

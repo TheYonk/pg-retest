@@ -21,6 +21,7 @@ fn make_report(
         replay_p95_latency_us: p95_us,
         source_p99_latency_us: 10000,
         replay_p99_latency_us: p99_us,
+        total_queries_filtered: 0,
         regressions: (0..regressions)
             .map(|i| Regression {
                 sql: format!("SELECT {i}"),

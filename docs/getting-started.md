@@ -48,7 +48,7 @@ Verify the installation:
 pg-retest --help
 ```
 
-You should see the list of subcommands: `capture`, `replay`, `compare`, `inspect`, `proxy`, `run`, `ab`, and `web`.
+You should see the list of subcommands: `capture`, `replay`, `compare`, `inspect`, `proxy`, `run`, `ab`, `web`, `transform`, `tune`, and `proxy-ctl`.
 
 ## Start a Test Database
 
@@ -324,7 +324,7 @@ Start the dashboard:
 pg-retest web --port 8080
 ```
 
-Open `http://localhost:8080` in your browser. The dashboard provides 9 pages:
+Open `http://localhost:8080` in your browser. The dashboard provides 11 pages:
 
 - **Dashboard** -- Overview of workloads, recent runs, and system status.
 - **Workloads** -- Upload, import, inspect, classify, and delete workload profiles.
@@ -334,6 +334,8 @@ Open `http://localhost:8080` in your browser. The dashboard provides 9 pages:
 - **Compare** -- View detailed comparison reports with per-query breakdowns.
 - **Pipeline** -- Configure and run full CI/CD pipelines.
 - **History** -- Browse historical runs with filtering and trend analysis.
+- **Transform** -- AI-powered workload transformation (analyze, plan, apply).
+- **Tuning** -- AI-assisted database tuning with history and recommendations.
 - **Help** -- In-app documentation and reference.
 
 ### Quick workflow via the dashboard
@@ -374,6 +376,9 @@ Now that you have the basic capture-replay-compare cycle working, explore these 
 | `pg-retest run` | Full CI/CD pipeline |
 | `pg-retest ab` | A/B test across database targets |
 | `pg-retest web` | Launch the web dashboard |
+| `pg-retest transform` | AI-powered workload transformation |
+| `pg-retest tune` | AI-assisted database tuning |
+| `pg-retest proxy-ctl` | Control a running persistent proxy |
 
 For verbose logging on any command, add `-v` or set `RUST_LOG=debug`:
 

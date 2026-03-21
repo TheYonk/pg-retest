@@ -3,6 +3,7 @@ use anyhow::Result;
 use serde::Serialize;
 use std::collections::HashMap;
 use tokio_postgres::{Client, NoTls};
+use tokio_postgres_rustls::MakeRustlsConnect;
 
 /// A PostgreSQL configuration setting with its current value and source.
 #[derive(Debug, Clone, Serialize)]
@@ -94,14 +95,25 @@ pub struct PgContext {
 }
 
 /// Connect to a PostgreSQL instance and return a client.
-pub async fn connect(connection_string: &str) -> Result<Client> {
-    let (client, connection) = tokio_postgres::connect(connection_string, NoTls).await?;
-
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            tracing::error!("PG connection error: {}", e);
-        }
-    });
+pub async fn connect(connection_string: &str, tls: Option<MakeRustlsConnect>) -> Result<Client> {
+    let client = if let Some(tls_connector) = tls {
+        let (client, connection) =
+            tokio_postgres::connect(connection_string, tls_connector).await?;
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                tracing::error!("PG connection error: {}", e);
+            }
+        });
+        client
+    } else {
+        let (client, connection) = tokio_postgres::connect(connection_string, NoTls).await?;
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                tracing::error!("PG connection error: {}", e);
+            }
+        });
+        client
+    };
 
     Ok(client)
 }

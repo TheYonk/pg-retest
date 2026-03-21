@@ -44,7 +44,7 @@ pub async fn compute_compare(
     let results: Vec<crate::replay::ReplayResults> =
         rmp_serde::from_slice(&replay_bytes).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let report = crate::compare::compute_comparison(&profile, &results, req.threshold);
+    let report = crate::compare::compute_comparison(&profile, &results, req.threshold, None);
     let report_json =
         serde_json::to_string(&report).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

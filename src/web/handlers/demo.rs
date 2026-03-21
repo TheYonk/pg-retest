@@ -62,7 +62,7 @@ pub async fn reset_db(
     })?;
 
     // Connect to DB-B
-    let client = crate::tuner::context::connect(&dc.db_b)
+    let client = crate::tuner::context::connect(&dc.db_b, None)
         .await
         .map_err(|e| {
             tracing::error!("Failed to connect to DB-B: {}", e);
@@ -281,6 +281,8 @@ async fn run_step_replay(
         &dc.db_b,
         crate::replay::ReplayMode::ReadWrite,
         1.0,
+        None,
+        None,
     )
     .await
     .map_err(|e| {
@@ -341,7 +343,7 @@ async fn run_step_compare(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let comparison = crate::compare::compute_comparison(&profile, &results, 20.0);
+    let comparison = crate::compare::compute_comparison(&profile, &results, 20.0, None);
     let value = serde_json::to_value(&comparison).map_err(|e| {
         tracing::error!("Failed to serialize comparison: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -389,6 +391,8 @@ async fn run_step_scale(
         &dc.db_b,
         crate::replay::ReplayMode::ReadOnly,
         1.0,
+        None,
+        None,
     )
     .await
     .map_err(|e| {
@@ -397,8 +401,7 @@ async fn run_step_scale(
     })?;
     let elapsed_us = start.elapsed().as_micros() as u64;
 
-    let scale_report =
-        crate::compare::capacity::compute_scale_report(&results, 3, elapsed_us);
+    let scale_report = crate::compare::capacity::compute_scale_report(&results, 3, elapsed_us);
     let value = serde_json::to_value(&scale_report).map_err(|e| {
         tracing::error!("Failed to serialize scale report: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -416,7 +419,7 @@ async fn run_step_tune(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let client = crate::tuner::context::connect(&dc.db_b)
+    let client = crate::tuner::context::connect(&dc.db_b, None)
         .await
         .map_err(|e| {
             tracing::error!("Failed to connect to DB-B for tuning context: {}", e);
@@ -459,6 +462,8 @@ async fn run_scenario_migration(
         &dc.db_b,
         crate::replay::ReplayMode::ReadWrite,
         1.0,
+        None,
+        None,
     )
     .await
     .map_err(|e| {
@@ -466,7 +471,7 @@ async fn run_scenario_migration(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let comparison = crate::compare::compute_comparison(&profile, &results, 20.0);
+    let comparison = crate::compare::compute_comparison(&profile, &results, 20.0, None);
     let value = serde_json::to_value(&comparison).map_err(|e| {
         tracing::error!("Failed to serialize comparison: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -498,6 +503,8 @@ async fn run_scenario_ab(
         &dc.db_a,
         crate::replay::ReplayMode::ReadOnly,
         1.0,
+        None,
+        None,
     )
     .await
     .map_err(|e| {
@@ -511,6 +518,8 @@ async fn run_scenario_ab(
         &dc.db_b,
         crate::replay::ReplayMode::ReadOnly,
         1.0,
+        None,
+        None,
     )
     .await
     .map_err(|e| {

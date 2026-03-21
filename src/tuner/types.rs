@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tokio_postgres_rustls::MakeRustlsConnect;
 
 /// A single tuning recommendation from the LLM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,7 +68,7 @@ pub struct TuningReport {
     pub all_changes: Vec<AppliedChange>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TuningConfig {
     pub workload_path: std::path::PathBuf,
     pub target: String,
@@ -81,6 +82,20 @@ pub struct TuningConfig {
     pub force: bool,
     pub speed: f64,
     pub read_only: bool,
+    pub tls: Option<MakeRustlsConnect>,
+}
+
+impl std::fmt::Debug for TuningConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TuningConfig")
+            .field("workload_path", &self.workload_path)
+            .field("target", &self.target)
+            .field("provider", &self.provider)
+            .field("max_iterations", &self.max_iterations)
+            .field("apply", &self.apply)
+            .field("tls", &self.tls.as_ref().map(|_| "Some(MakeRustlsConnect)"))
+            .finish()
+    }
 }
 
 /// Events emitted during tuning for real-time progress reporting.
@@ -91,15 +106,28 @@ pub enum TuningEvent {
     /// A new iteration has started.
     IterationStarted { iteration: u32, max_iterations: u32 },
     /// LLM returned recommendations.
-    RecommendationsReceived { iteration: u32, recommendations: Vec<Recommendation> },
+    RecommendationsReceived {
+        iteration: u32,
+        recommendations: Vec<Recommendation>,
+    },
     /// A single change was applied (success or failure).
-    ChangeApplied { iteration: u32, change: AppliedChange },
+    ChangeApplied {
+        iteration: u32,
+        change: AppliedChange,
+    },
     /// Replay after changes completed with comparison.
-    ReplayCompleted { iteration: u32, comparison: ComparisonSummary },
+    ReplayCompleted {
+        iteration: u32,
+        comparison: ComparisonSummary,
+    },
     /// Rollback started due to regression.
     RollbackStarted { iteration: u32 },
     /// Rollback completed with results.
-    RollbackCompleted { iteration: u32, rolled_back: u32, failed: u32 },
+    RollbackCompleted {
+        iteration: u32,
+        rolled_back: u32,
+        failed: u32,
+    },
 }
 
 #[cfg(test)]

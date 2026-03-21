@@ -228,7 +228,7 @@ async fn run_replay_task(
         let session = session.clone();
         let conn_str = target.to_string();
         let handle = tokio::spawn(async move {
-            replay_session(&session, &conn_str, mode, speed, replay_start).await
+            replay_session(&session, &conn_str, mode, speed, replay_start, None).await
         });
         handles.push(handle);
     }
@@ -259,7 +259,7 @@ async fn run_replay_task(
     std::fs::write(&results_path, bytes)?;
 
     // Compute comparison
-    let comparison = crate::compare::compute_comparison(&profile, &all_results, 20.0);
+    let comparison = crate::compare::compute_comparison(&profile, &all_results, 20.0, None);
     let report_json = serde_json::to_string(&comparison)?;
 
     let now = chrono::Utc::now().to_rfc3339();

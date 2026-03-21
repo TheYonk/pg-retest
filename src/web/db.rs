@@ -207,7 +207,40 @@ pub struct RunRow {
     pub created_at: Option<String>,
 }
 
+/// Redact password from a PostgreSQL connection string.
+/// Handles both URL format (postgres://user:pass@host/db) and
+/// key-value format (host=x user=y password=secret).
+pub fn redact_connection_string(conn_str: &str) -> String {
+    if conn_str.contains("://") {
+        // URL format: postgres://user:PASSWORD@host/db
+        if let Some(at_pos) = conn_str.find('@') {
+            if let Some(colon_pos) = conn_str[..at_pos].rfind(':') {
+                let scheme_end = conn_str.find("://").map(|p| p + 3).unwrap_or(0);
+                if colon_pos > scheme_end {
+                    return format!("{}***{}", &conn_str[..colon_pos + 1], &conn_str[at_pos..]);
+                }
+            }
+        }
+        conn_str.to_string()
+    } else {
+        // Key-value format: host=x password=secret user=y
+        let mut result = String::new();
+        for part in conn_str.split_whitespace() {
+            if !result.is_empty() {
+                result.push(' ');
+            }
+            if part.to_lowercase().starts_with("password=") {
+                result.push_str("password=***");
+            } else {
+                result.push_str(part);
+            }
+        }
+        result
+    }
+}
+
 pub fn insert_run(conn: &Connection, r: &RunRow) -> Result<()> {
+    let redacted_target = r.target_conn.as_deref().map(redact_connection_string);
     conn.execute(
         "INSERT INTO runs (id, run_type, status, workload_id, config_json, started_at,
          target_conn, replay_mode, speed, scale)
@@ -219,7 +252,7 @@ pub fn insert_run(conn: &Connection, r: &RunRow) -> Result<()> {
             r.workload_id,
             r.config_json,
             r.started_at,
-            r.target_conn,
+            redacted_target,
             r.replay_mode,
             r.speed,
             r.scale,
@@ -854,5 +887,29 @@ mod tests {
         assert_eq!(all.len(), 1);
 
         assert!(get_tuning_report(&conn, "tune-999").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_redact_connection_string_url() {
+        assert_eq!(
+            redact_connection_string("postgres://user:secret@localhost/db"),
+            "postgres://user:***@localhost/db"
+        );
+    }
+
+    #[test]
+    fn test_redact_connection_string_keyval() {
+        assert_eq!(
+            redact_connection_string("host=localhost user=demo password=secret123 dbname=test"),
+            "host=localhost user=demo password=*** dbname=test"
+        );
+    }
+
+    #[test]
+    fn test_redact_no_password() {
+        assert_eq!(
+            redact_connection_string("host=localhost user=demo dbname=test"),
+            "host=localhost user=demo dbname=test"
+        );
     }
 }

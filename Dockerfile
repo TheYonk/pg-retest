@@ -11,4 +11,4 @@ COPY --from=builder /src/target/release/pg-retest /usr/local/bin/pg-retest
 RUN mkdir -p /data/workloads
 EXPOSE 8080
 ENTRYPOINT ["pg-retest"]
-CMD ["web", "--port", "8080", "--data-dir", "/data"]
+CMD ["web", "--port", "8080", "--data-dir", "/data", "--bind", "0.0.0.0", "--no-auth"]

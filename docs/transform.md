@@ -213,6 +213,7 @@ pg-retest compare --source workload.wkl --replay results.wkl
 |------|---------|-------------|
 | `--workload <PATH>` | _(required)_ | Input workload profile (`.wkl`). |
 | `--json` | `false` | Output analysis as JSON. |
+| `--output-format <FMT>` | `text` | Output format: `text` (human-readable summary) or `json` (structured JSON to stdout). Equivalent to `--json` when set to `json`. |
 
 ### `transform plan`
 

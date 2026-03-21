@@ -73,7 +73,7 @@ impl RdsCapture {
             }
         };
 
-        println!("Downloading RDS log file: {log_file_name}");
+        tracing::info!("Downloading RDS log file: {log_file_name}");
 
         // Step 3: Download with pagination
         let temp_dir = tempfile::tempdir().context("Failed to create temp directory")?;
@@ -176,7 +176,7 @@ fn download_log_file(
         }
     }
 
-    println!("Downloaded {total_bytes} bytes from RDS log");
+    tracing::info!("Downloaded {total_bytes} bytes from RDS log");
     Ok(())
 }
 

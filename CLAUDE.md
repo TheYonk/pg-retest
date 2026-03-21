@@ -102,6 +102,8 @@ Key modules:
 - `web::handlers::demo` — Demo mode handlers (wizard steps, scenario cards, DB reset)
 - `proxy::staging` — SQLite staging for capture data (batched insert, read-back, cleanup, crash recovery)
 - `proxy::control` — Minimal HTTP control endpoint for standalone persistent proxy
+- `tls` — TLS connector builder (`TlsMode` enum: Disable/Prefer/Require), used by replay and tuner. `make_tls_connector()` with optional CA cert path.
+- `web::auth` — Bearer token auth middleware for Axum dashboard
 
 ## Milestone Status
 
@@ -167,6 +169,16 @@ Key modules:
 - Proxy control port: standalone persistent proxy exposes HTTP control on `--control-port` (default 9091). Web mode uses existing `/api/v1/proxy/*` endpoints instead.
 - `proxy-ctl` auto-detects web vs standalone by trying `GET /api/v1/health`.
 - `no_capture` is `Arc<AtomicBool>` shared across all relay connections — toggled at runtime for persistent capture start/stop.
+- Web dashboard: default bind changed from `0.0.0.0` to `127.0.0.1`. Docker containers must use `--bind 0.0.0.0`. Auth token is auto-generated on startup; use `--no-auth` for development.
+- TLS: `--tls-mode` defaults to `prefer`. Supported modes: `disable`, `prefer`, `require`. Uses `tokio-postgres-rustls` with system CAs by default, or `--tls-ca-cert` for custom CA.
+- Replay: `--max-connections` limits concurrent DB connections via `tokio::sync::Semaphore`. Default unlimited (backward compatible).
+- Tuner safety: SchemaChange recommendations use an allowlist (only `CREATE INDEX`, `ANALYZE`, `REINDEX` auto-applied). All other DDL rejected with explanation. SQL values in `ALTER SYSTEM SET` are escaped (single quotes doubled).
+- CLI: `--target-env` reads connection string from an environment variable. `--output-format text|json` on compare/inspect/ab commands. `--log-format text|json` global flag for structured JSON logs.
+- Web dashboard: passwords in connection strings are redacted (`***`) before storing in SQLite.
+- Web dashboard: graceful shutdown via SIGTERM/SIGINT handling. Background tasks cancelled on shutdown.
+- Persistent proxy: connections established before capture is toggled ON are now captured (late-join session support).
+- API key validation: `tune` command validates API key presence at startup for claude/openai/gemini providers.
+- Compare: `compute_comparison()` accepts optional `ReplayMode` to filter source queries. ReadOnly mode no longer includes DML queries in source percentiles.
 
 ## Conventions
 
@@ -175,3 +187,4 @@ Key modules:
 - Capture and replay must be decoupled — capture produces a profile file; replay consumes it. They should never require simultaneous access to source and target.
 - Connection-level parallelism in replay is critical for realistic results; avoid serializing inherently parallel workloads.
 - Configuration changes and server differences are the variables under test — the tool itself should introduce minimal overhead or variance.
+- Diagnostic/status messages use `tracing` crate (`info!`, `warn!`, `error!`). User-facing CLI output (reports, tables, JSON) uses `println!`.

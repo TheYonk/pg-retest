@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use anyhow::Result;
-use tracing::info;
+use tracing::{error, info, warn};
 
 use crate::capture::csv_log::CsvLogCapture;
 use crate::capture::masking::mask_sql_literals;
@@ -38,7 +38,7 @@ pub fn run_pipeline(config: &PipelineConfig) -> PipelineResult {
     match run_pipeline_inner(config) {
         Ok(result) => result,
         Err(e) => {
-            eprintln!("Pipeline error: {e:#}");
+            error!("Pipeline error: {:#}", e);
             PipelineResult {
                 exit_code: classify_error(&e),
                 report: None,
@@ -85,33 +85,31 @@ fn run_pipeline_inner(config: &PipelineConfig) -> Result<PipelineResult> {
         .thresholds
         .as_ref()
         .map_or(20.0, |t| t.regression_threshold_pct);
-    let comparison = compute_comparison(&replay_profile, &results, threshold_pct);
+    let comparison = compute_comparison(&replay_profile, &results, threshold_pct, None);
     report::print_terminal_report(&comparison);
 
     // ── Step 5: Evaluate thresholds ─────────────────────────────────
     let exit_code = if let Some(ref thresholds) = config.thresholds {
         let threshold_results = evaluate_thresholds(&comparison, thresholds);
 
-        // Print threshold results
-        println!();
-        println!("  Threshold Checks:");
+        // Log threshold results
         for r in &threshold_results {
             let status = if r.passed { "PASS" } else { "FAIL" };
-            println!(
-                "    [{status}] {}: {:.2} (limit: {:.2})",
+            info!(
+                "[{status}] {}: {:.2} (limit: {:.2})",
                 r.name, r.actual, r.limit
             );
         }
 
         if all_passed(&threshold_results) {
-            println!("  All thresholds passed.");
+            info!("All thresholds passed");
             EXIT_PASS
         } else {
-            println!("  Threshold violations detected.");
+            warn!("Threshold violations detected");
             EXIT_THRESHOLD_VIOLATION
         }
     } else {
-        println!("  No thresholds configured, result: PASS");
+        info!("No thresholds configured, result: PASS");
         EXIT_PASS
     };
 
@@ -121,7 +119,7 @@ fn run_pipeline_inner(config: &PipelineConfig) -> Result<PipelineResult> {
 
     // ── Step 7: Teardown ────────────────────────────────────────────
     if let Err(e) = provision::teardown(&provisioned) {
-        eprintln!("Warning: teardown failed: {e}");
+        warn!("Teardown failed: {}", e);
     }
 
     Ok(PipelineResult {
@@ -239,7 +237,7 @@ fn run_replay_step(
     // Scale if requested (per-category takes priority over uniform)
     let replay_profile = if let Some(class_scales) = build_class_scales(&config.replay) {
         if let Some(warning) = check_write_safety(profile) {
-            eprintln!("{warning}");
+            warn!("{}", warning);
         }
         let scaled = scale_sessions_by_class(profile, &class_scales, config.replay.stagger_ms);
         let mut p = profile.clone();
@@ -254,7 +252,7 @@ fn run_replay_step(
         p
     } else if config.replay.scale > 1 {
         if let Some(warning) = check_write_safety(profile) {
-            eprintln!("{warning}");
+            warn!("{}", warning);
         }
         let scaled = scale_sessions(profile, config.replay.scale, config.replay.stagger_ms);
         let mut p = profile.clone();
@@ -279,6 +277,8 @@ fn run_replay_step(
             connection_string,
             mode,
             config.replay.speed,
+            None,
+            None,
         ))
         .map_err(|e| anyhow::anyhow!("Replay error: {e}"))?;
 
@@ -339,6 +339,8 @@ fn run_ab_pipeline(
                 &variant.target,
                 mode,
                 config.replay.speed,
+                None,
+                None,
             ))
             .map_err(|e| anyhow::anyhow!("Replay error for '{}': {e}", variant.label))?;
         variant_results.push(VariantResult::from_results(variant.label.clone(), results));

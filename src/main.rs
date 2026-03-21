@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use pg_retest::cli::{Cli, Commands};
@@ -12,7 +13,17 @@ fn main() -> Result<()> {
     } else {
         EnvFilter::new("info")
     };
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    match cli.log_format.as_str() {
+        "json" => {
+            tracing_subscriber::fmt()
+                .json()
+                .with_env_filter(filter)
+                .init();
+        }
+        _ => {
+            tracing_subscriber::fmt().with_env_filter(filter).init();
+        }
+    }
 
     match cli.command {
         Commands::Capture(args) => cmd_capture(args),
@@ -73,16 +84,16 @@ fn cmd_capture(args: pg_retest::cli::CaptureArgs) -> Result<()> {
                 query.sql = mask_sql_literals(&query.sql);
             }
         }
-        println!("Applied PII masking to SQL literals");
+        info!("Applied PII masking to SQL literals");
     }
 
-    println!(
+    info!(
         "Captured {} queries across {} sessions",
         profile.metadata.total_queries, profile.metadata.total_sessions
     );
 
     io::write_profile(&args.output, &profile)?;
-    println!("Wrote workload profile to {}", args.output.display());
+    info!("Wrote workload profile to {}", args.output.display());
     Ok(())
 }
 
@@ -90,6 +101,17 @@ fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
     use pg_retest::profile::io;
     use pg_retest::replay::scaling::{check_write_safety, scale_sessions};
     use pg_retest::replay::{session::run_replay, ReplayMode};
+
+    let target = if let Some(env_var) = &args.target_env {
+        std::env::var(env_var).map_err(|_| {
+            anyhow::anyhow!(
+                "Environment variable '{}' not set (specified via --target-env)",
+                env_var
+            )
+        })?
+    } else {
+        args.target.clone()
+    };
 
     let profile = io::read_profile(&args.workload)?;
     let mode = if args.read_only {
@@ -122,16 +144,16 @@ fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
         class_scales.insert(WorkloadClass::Bulk, args.scale_bulk.unwrap_or(1));
 
         if let Some(warning) = check_write_safety(&profile) {
-            println!("{warning}");
+            warn!("{}", warning);
         }
 
         let scaled_sessions = scale_sessions_by_class(&profile, &class_scales, args.stagger_ms);
 
-        println!("Per-category scaling:");
+        info!("Per-category scaling:");
         for (class, scale) in &class_scales {
-            println!("  {:?}: {}x", class, scale);
+            info!("  {:?}: {}x", class, scale);
         }
-        println!(
+        info!(
             "Scaled workload: {} original sessions -> {} total",
             profile.sessions.len(),
             scaled_sessions.len(),
@@ -145,10 +167,10 @@ fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
         scaled
     } else if args.scale > 1 {
         if let Some(warning) = check_write_safety(&profile) {
-            println!("{warning}");
+            warn!("{}", warning);
         }
         let scaled_sessions = scale_sessions(&profile, args.scale, args.stagger_ms);
-        println!(
+        info!(
             "Scaled workload: {} original sessions -> {} total ({}x, {}ms stagger)",
             profile.sessions.len(),
             scaled_sessions.len(),
@@ -165,15 +187,25 @@ fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
         profile.clone()
     };
 
-    println!(
+    info!(
         "Replaying {} sessions ({} queries) against {}",
-        replay_profile.metadata.total_sessions, replay_profile.metadata.total_queries, args.target
+        replay_profile.metadata.total_sessions, replay_profile.metadata.total_queries, target
     );
-    println!("Mode: {:?}, Speed: {}x", mode, args.speed);
+    info!("Mode: {:?}, Speed: {}x", mode, args.speed);
+
+    let tls_mode = pg_retest::tls::parse_tls_mode(&args.tls_mode)?;
+    let tls = pg_retest::tls::make_tls_connector(tls_mode, args.tls_ca_cert.as_deref())?;
 
     let rt = tokio::runtime::Runtime::new()?;
     let replay_start = std::time::Instant::now();
-    let results = rt.block_on(run_replay(&replay_profile, &args.target, mode, args.speed))?;
+    let results = rt.block_on(run_replay(
+        &replay_profile,
+        &target,
+        mode,
+        args.speed,
+        args.max_connections,
+        tls,
+    ))?;
     let elapsed_us = replay_start.elapsed().as_micros() as u64;
 
     let total_replayed: usize = results.iter().map(|r| r.query_results.len()).sum();
@@ -183,7 +215,7 @@ fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
         .filter(|q| !q.success)
         .count();
 
-    println!("Replay complete: {total_replayed} queries replayed, {total_errors} errors");
+    info!("Replay complete: {total_replayed} queries replayed, {total_errors} errors");
 
     // Print scale report if scaled
     if args.scale > 1 {
@@ -195,12 +227,13 @@ fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
     // Save results as MessagePack
     let bytes = rmp_serde::to_vec(&results)?;
     std::fs::write(&args.output, bytes)?;
-    println!("Results written to {}", args.output.display());
+    info!("Results written to {}", args.output.display());
 
     Ok(())
 }
 
 fn cmd_compare(args: pg_retest::cli::CompareArgs) -> Result<()> {
+    use pg_retest::cli::OutputFormat;
     use pg_retest::compare::{compute_comparison, evaluate_outcome, report};
     use pg_retest::profile::io;
     use pg_retest::replay::ReplayResults;
@@ -210,16 +243,27 @@ fn cmd_compare(args: pg_retest::cli::CompareArgs) -> Result<()> {
     let replay_bytes = std::fs::read(&args.replay)?;
     let results: Vec<ReplayResults> = rmp_serde::from_slice(&replay_bytes)?;
 
-    let report_data = compute_comparison(&source, &results, args.threshold);
-    report::print_terminal_report(&report_data);
+    let report_data = compute_comparison(&source, &results, args.threshold, None);
+
+    match args.output_format {
+        OutputFormat::Text => {
+            report::print_terminal_report(&report_data);
+        }
+        OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(&report_data)?;
+            println!("{json}");
+        }
+    }
 
     if let Some(json_path) = &args.json {
         report::write_json_report(json_path, &report_data)?;
-        println!("  JSON report written to {}", json_path.display());
+        info!("JSON report written to {}", json_path.display());
     }
 
     let outcome = evaluate_outcome(&report_data, args.fail_on_regression, args.fail_on_error);
-    println!("  Result: {}", outcome.label());
+    if args.output_format == OutputFormat::Text {
+        println!("  Result: {}", outcome.label());
+    }
 
     let code = outcome.exit_code();
     if code != 0 {
@@ -231,15 +275,49 @@ fn cmd_compare(args: pg_retest::cli::CompareArgs) -> Result<()> {
 
 fn cmd_inspect(args: pg_retest::cli::InspectArgs) -> Result<()> {
     use pg_retest::classify::{classify_workload, print_classification};
+    use pg_retest::cli::OutputFormat;
     use pg_retest::profile::io;
 
     let profile = io::read_profile(&args.path)?;
-    let json = serde_json::to_string_pretty(&profile)?;
-    println!("{json}");
+
+    match args.output_format {
+        OutputFormat::Text => {
+            println!("  Workload Profile Summary");
+            println!("  ========================");
+            println!();
+            println!("  Source host:      {}", profile.source_host);
+            println!("  PG version:       {}", profile.pg_version);
+            println!("  Capture method:   {}", profile.capture_method);
+            println!("  Total sessions:   {}", profile.metadata.total_sessions);
+            println!("  Total queries:    {}", profile.metadata.total_queries);
+            println!("  Captured at:      {}", profile.captured_at);
+            println!();
+            for session in &profile.sessions {
+                println!(
+                    "  Session {} — {} queries",
+                    session.id,
+                    session.queries.len()
+                );
+            }
+            println!();
+        }
+        OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(&profile)?;
+            println!("{json}");
+        }
+    }
 
     if args.classify {
         let classification = classify_workload(&profile);
-        print_classification(&classification);
+        match args.output_format {
+            OutputFormat::Text => {
+                print_classification(&classification);
+            }
+            OutputFormat::Json => {
+                let json = serde_json::to_string_pretty(&classification)?;
+                println!("{json}");
+            }
+        }
     }
 
     Ok(())
@@ -313,7 +391,7 @@ fn cmd_run(args: pg_retest::cli::RunArgs) -> Result<()> {
     let config = match load_config(&args.config) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Config error: {e:#}");
+            tracing::error!("Config error: {:#}", e);
             std::process::exit(pipeline::EXIT_CONFIG_ERROR);
         }
     };
@@ -354,7 +432,7 @@ fn cmd_ab(args: pg_retest::cli::ABArgs) -> Result<()> {
         })
         .collect::<Result<Vec<_>>>()?;
 
-    println!(
+    info!(
         "A/B test: {} variants, {} sessions, {} queries",
         parsed_variants.len(),
         profile.metadata.total_sessions,
@@ -365,17 +443,33 @@ fn cmd_ab(args: pg_retest::cli::ABArgs) -> Result<()> {
     let mut variant_results = Vec::new();
 
     for (label, conn_string) in &parsed_variants {
-        println!("Replaying variant '{label}' against {conn_string}...");
-        let results = rt.block_on(run_replay(&profile, conn_string, mode, args.speed))?;
+        info!("Replaying variant '{}' against {}...", label, conn_string);
+        let results = rt.block_on(run_replay(
+            &profile,
+            conn_string,
+            mode,
+            args.speed,
+            None,
+            None,
+        ))?;
         variant_results.push(VariantResult::from_results(label.clone(), results));
     }
 
     let report = compute_ab_comparison(variant_results, args.threshold);
-    print_ab_report(&report);
+
+    match args.output_format {
+        pg_retest::cli::OutputFormat::Text => {
+            print_ab_report(&report);
+        }
+        pg_retest::cli::OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(&report)?;
+            println!("{json}");
+        }
+    }
 
     if let Some(json_path) = &args.json {
         write_ab_json(json_path, &report)?;
-        println!("  JSON report written to {}", json_path.display());
+        info!("JSON report written to {}", json_path.display());
     }
 
     Ok(())
@@ -384,8 +478,22 @@ fn cmd_ab(args: pg_retest::cli::ABArgs) -> Result<()> {
 fn cmd_web(args: pg_retest::cli::WebArgs) -> Result<()> {
     use pg_retest::web;
 
+    let auth_token = if args.no_auth {
+        None
+    } else {
+        Some(
+            args.auth_token
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        )
+    };
+
     let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(web::run_server(args.port, args.data_dir))
+    rt.block_on(web::run_server(
+        args.port,
+        args.data_dir,
+        args.bind,
+        auth_token,
+    ))
 }
 
 fn cmd_transform(args: pg_retest::cli::TransformArgs) -> Result<()> {
@@ -478,14 +586,14 @@ fn cmd_transform(args: pg_retest::cli::TransformArgs) -> Result<()> {
                 model,
             });
 
-            println!("Generating transform plan with {}...", planner.name());
+            info!("Generating transform plan with {}...", planner.name());
 
             let rt = tokio::runtime::Runtime::new()?;
             let plan = rt.block_on(planner.generate_plan(&analysis, &prompt))?;
 
             let toml_str = toml::to_string_pretty(&plan)?;
             std::fs::write(&output, &toml_str)?;
-            println!("Plan written to {}", output.display());
+            info!("Plan written to {}", output.display());
             println!();
             println!("  Groups: {}", plan.groups.len());
             println!("  Transforms: {}", plan.transforms.len());
@@ -510,15 +618,15 @@ fn cmd_transform(args: pg_retest::cli::TransformArgs) -> Result<()> {
             let transform_plan: pg_retest::transform::plan::TransformPlan =
                 toml::from_str(&plan_str)?;
 
-            println!("Applying transform plan...");
-            println!("  Groups: {}", transform_plan.groups.len());
-            println!("  Transforms: {}", transform_plan.transforms.len());
+            info!("Applying transform plan...");
+            info!("  Groups: {}", transform_plan.groups.len());
+            info!("  Transforms: {}", transform_plan.transforms.len());
 
             let result =
                 pg_retest::transform::engine::apply_transform(&profile, &transform_plan, seed)?;
 
-            println!(
-                "  Result: {} sessions, {} queries (was: {} sessions, {} queries)",
+            info!(
+                "Result: {} sessions, {} queries (was: {} sessions, {} queries)",
                 result.metadata.total_sessions,
                 result.metadata.total_queries,
                 profile.metadata.total_sessions,
@@ -526,18 +634,82 @@ fn cmd_transform(args: pg_retest::cli::TransformArgs) -> Result<()> {
             );
 
             io::write_profile(&output, &result)?;
-            println!("Wrote transformed workload to {}", output.display());
+            info!("Wrote transformed workload to {}", output.display());
             Ok(())
         }
     }
 }
 
 fn cmd_tune(args: pg_retest::cli::TuneArgs) -> Result<()> {
+    let target = if let Some(env_var) = &args.target_env {
+        std::env::var(env_var).map_err(|_| {
+            anyhow::anyhow!(
+                "Environment variable '{}' not set (specified via --target-env)",
+                env_var
+            )
+        })?
+    } else {
+        args.target.clone()
+    };
+
+    let tls_mode = pg_retest::tls::parse_tls_mode(&args.tls_mode)?;
+    let tls = pg_retest::tls::make_tls_connector(tls_mode, args.tls_ca_cert.as_deref())?;
+
+    // Validate API key for providers that need one
+    let api_key = match args.provider.as_str() {
+        "bedrock" | "ollama" => args.api_key, // No API key required
+        "claude" => {
+            let key = args
+                .api_key
+                .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok());
+            if key.is_none() {
+                anyhow::bail!(
+                    "Claude provider requires an API key.\n\
+                     Set it with: export ANTHROPIC_API_KEY=sk-ant-...\n\
+                     Or use: --api-key <key>"
+                );
+            }
+            key
+        }
+        "openai" => {
+            let key = args
+                .api_key
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+            if key.is_none() {
+                anyhow::bail!(
+                    "OpenAI provider requires an API key.\n\
+                     Set it with: export OPENAI_API_KEY=sk-...\n\
+                     Or use: --api-key <key>"
+                );
+            }
+            key
+        }
+        "gemini" => {
+            let key = args
+                .api_key
+                .or_else(|| std::env::var("GEMINI_API_KEY").ok());
+            if key.is_none() {
+                anyhow::bail!(
+                    "Gemini provider requires an API key.\n\
+                     Set it with: export GEMINI_API_KEY=...\n\
+                     Or use: --api-key <key>"
+                );
+            }
+            key
+        }
+        other => {
+            anyhow::bail!(
+                "Unknown provider '{}'. Use: claude, openai, gemini, bedrock, ollama",
+                other
+            );
+        }
+    };
+
     let config = pg_retest::tuner::types::TuningConfig {
         workload_path: args.workload,
-        target: args.target,
+        target,
         provider: args.provider,
-        api_key: args.api_key,
+        api_key,
         api_url: args.api_url,
         model: args.model,
         max_iterations: args.max_iterations,
@@ -546,6 +718,7 @@ fn cmd_tune(args: pg_retest::cli::TuneArgs) -> Result<()> {
         force: args.force,
         speed: args.speed,
         read_only: args.read_only,
+        tls,
     };
 
     let rt = tokio::runtime::Runtime::new()?;
@@ -554,7 +727,7 @@ fn cmd_tune(args: pg_retest::cli::TuneArgs) -> Result<()> {
     if let Some(json_path) = args.json {
         let json = serde_json::to_string_pretty(&report)?;
         std::fs::write(&json_path, json)?;
-        println!("\n  Report written to {}", json_path.display());
+        info!("Report written to {}", json_path.display());
     }
 
     Ok(())

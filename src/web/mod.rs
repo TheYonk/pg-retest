@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod db;
 pub mod handlers;
 pub mod routes;
@@ -100,7 +101,12 @@ fn import_demo_workload(
 }
 
 /// Start the web server on the given port.
-pub async fn run_server(port: u16, data_dir: PathBuf) -> Result<()> {
+pub async fn run_server(
+    port: u16,
+    data_dir: PathBuf,
+    bind: String,
+    auth_token: Option<String>,
+) -> Result<()> {
     // Ensure data directory exists
     std::fs::create_dir_all(&data_dir)?;
 
@@ -113,36 +119,77 @@ pub async fn run_server(port: u16, data_dir: PathBuf) -> Result<()> {
     let demo_config = state::DemoConfig::from_env();
 
     if let Some(ref dc) = demo_config {
-        println!("Demo mode enabled:");
-        println!("  DB A: {}", dc.db_a);
-        println!("  DB B: {}", dc.db_b);
-        println!("  Workload: {}", dc.workload_path.display());
+        tracing::info!("Demo mode enabled");
+        tracing::info!("  DB A: {}", dc.db_a);
+        tracing::info!("  DB B: {}", dc.db_b);
+        tracing::info!("  Workload: {}", dc.workload_path.display());
 
         // Auto-import the demo workload if the file exists
         if dc.workload_path.exists() {
             match import_demo_workload(&conn, dc, &data_dir) {
-                Ok(()) => println!("  Demo workload imported successfully"),
-                Err(e) => eprintln!("  Warning: failed to import demo workload: {e}"),
+                Ok(()) => tracing::info!("Demo workload imported successfully"),
+                Err(e) => tracing::warn!("Failed to import demo workload: {e}"),
             }
         } else {
-            println!(
-                "  Demo workload not found at {} (will import when available)",
+            tracing::info!(
+                "Demo workload not found at {} (will import when available)",
                 dc.workload_path.display()
             );
         }
     }
 
     let state = AppState::new(conn, data_dir.clone(), demo_config);
+    let shutdown_state = state.clone();
 
     // Build router: API routes + static file fallback
-    let app = routes::build_router(state).fallback(static_handler);
+    let app = routes::build_router(state, auth_token.clone()).fallback(static_handler);
 
-    let addr = format!("0.0.0.0:{port}");
+    let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    println!("pg-retest web dashboard: http://localhost:{port}");
-    println!("Data directory: {}", data_dir.display());
+    tracing::info!("pg-retest web dashboard: http://{}:{}", bind, port);
+    tracing::info!("Data directory: {}", data_dir.display());
 
-    axum::serve(listener, app).await?;
+    if let Some(ref token) = auth_token {
+        tracing::info!("Auth token: {token}");
+        tracing::info!("Use: Authorization: Bearer {token}");
+    } else {
+        tracing::warn!("Authentication is disabled. Do not expose to untrusted networks.");
+    }
+
+    if bind != "127.0.0.1" && auth_token.is_none() {
+        tracing::warn!("Binding to {} without authentication is dangerous!", bind);
+    }
+
+    let server = axum::serve(listener, app).with_graceful_shutdown(shutdown_signal());
+
+    server.await?;
+
+    // Cleanup: cancel all background tasks
+    shutdown_state.tasks.cancel_all().await;
+    tracing::info!("Server shut down gracefully");
+
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = sigterm.recv() => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        ctrl_c.await.expect("failed to install Ctrl+C handler");
+    }
+
+    tracing::info!("Shutdown signal received, draining connections...");
 }

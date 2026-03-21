@@ -16,9 +16,17 @@ pub async fn apply_recommendation(client: &Client, rec: &Recommendation) -> Appl
             recommended_value,
             ..
         } => {
-            let set_sql = format!("ALTER SYSTEM SET {} = '{}'", parameter, recommended_value);
+            let set_sql = format!(
+                "ALTER SYSTEM SET {} = '{}'",
+                parameter,
+                escape_pg_value(recommended_value)
+            );
             let reload_sql = "SELECT pg_reload_conf()";
-            let rollback_sql = format!("ALTER SYSTEM SET {} = '{}'", parameter, current_value);
+            let rollback_sql = format!(
+                "ALTER SYSTEM SET {} = '{}'",
+                parameter,
+                escape_pg_value(current_value)
+            );
 
             match execute_sql(client, &set_sql).await {
                 Ok(()) => match execute_sql(client, reload_sql).await {
@@ -190,6 +198,12 @@ fn rec_summary(rec: &Recommendation) -> String {
     }
 }
 
+/// Escape a value for use in a single-quoted SQL string.
+/// Doubles any single quotes to prevent SQL injection.
+fn escape_pg_value(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
 /// Execute a SQL statement via batch_execute (no result rows expected).
 async fn execute_sql(client: &Client, sql: &str) -> Result<()> {
     client.batch_execute(sql).await?;
@@ -271,5 +285,14 @@ mod tests {
 
         // Not a CREATE INDEX statement
         assert_eq!(extract_index_name("SELECT 1"), None);
+    }
+
+    #[test]
+    fn test_escape_pg_value() {
+        assert_eq!(escape_pg_value("128MB"), "128MB");
+        assert_eq!(escape_pg_value("it's"), "it''s");
+        assert_eq!(escape_pg_value("val'ue"), "val''ue");
+        assert_eq!(escape_pg_value("normal"), "normal");
+        assert_eq!(escape_pg_value(""), "");
     }
 }

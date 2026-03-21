@@ -2,6 +2,33 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+/// Output format for CLI commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Text,
+    Json,
+}
+
+impl std::str::FromStr for OutputFormat {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "text" => Ok(OutputFormat::Text),
+            "json" => Ok(OutputFormat::Json),
+            other => Err(format!("Unknown format '{}'. Use: text, json", other)),
+        }
+    }
+}
+
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputFormat::Text => write!(f, "text"),
+            OutputFormat::Json => write!(f, "json"),
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "pg-retest")]
 #[command(version, about = "Capture, replay, and compare PostgreSQL workloads")]
@@ -12,6 +39,10 @@ pub struct Cli {
     /// Enable verbose logging
     #[arg(short, long, global = true)]
     pub verbose: bool,
+
+    /// Log output format: text or json
+    #[arg(long, global = true, default_value = "text")]
+    pub log_format: String,
 }
 
 #[derive(Subcommand)]
@@ -101,6 +132,10 @@ pub struct ReplayArgs {
     #[arg(long)]
     pub target: String,
 
+    /// Read target connection string from this environment variable
+    #[arg(long)]
+    pub target_env: Option<String>,
+
     /// Output results profile path (.wkl)
     #[arg(short, long, default_value = "results.wkl")]
     pub output: PathBuf,
@@ -136,6 +171,18 @@ pub struct ReplayArgs {
     /// Scale bulk sessions by N (per-category scaling)
     #[arg(long)]
     pub scale_bulk: Option<u32>,
+
+    /// Maximum concurrent database connections during replay
+    #[arg(long)]
+    pub max_connections: Option<u32>,
+
+    /// TLS mode for target database connection: disable, prefer, require
+    #[arg(long, default_value = "prefer")]
+    pub tls_mode: String,
+
+    /// Path to CA certificate file for TLS verification
+    #[arg(long)]
+    pub tls_ca_cert: Option<PathBuf>,
 }
 
 #[derive(clap::Args)]
@@ -163,6 +210,10 @@ pub struct CompareArgs {
     /// Exit non-zero if query errors occurred
     #[arg(long, default_value_t = false)]
     pub fail_on_error: bool,
+
+    /// Output format for stdout: text or json
+    #[arg(long, default_value = "text")]
+    pub output_format: OutputFormat,
 }
 
 #[derive(clap::Args)]
@@ -173,6 +224,10 @@ pub struct InspectArgs {
     /// Show workload classification breakdown
     #[arg(long, default_value_t = false)]
     pub classify: bool,
+
+    /// Output format for stdout: text or json
+    #[arg(long, default_value = "text")]
+    pub output_format: OutputFormat,
 }
 
 #[derive(clap::Args)]
@@ -262,6 +317,10 @@ pub struct ABArgs {
     /// Regression threshold percentage
     #[arg(long, default_value_t = 20.0)]
     pub threshold: f64,
+
+    /// Output format for stdout: text or json
+    #[arg(long, default_value = "text")]
+    pub output_format: OutputFormat,
 }
 
 #[derive(clap::Args)]
@@ -273,6 +332,18 @@ pub struct WebArgs {
     /// Data directory for SQLite database and workload files
     #[arg(long, default_value = "./data")]
     pub data_dir: std::path::PathBuf,
+
+    /// Address to bind to (default: 127.0.0.1 for security)
+    #[arg(long, default_value = "127.0.0.1")]
+    pub bind: String,
+
+    /// Bearer token for API authentication (auto-generated if not set)
+    #[arg(long)]
+    pub auth_token: Option<String>,
+
+    /// Disable authentication (NOT recommended for network exposure)
+    #[arg(long, default_value_t = false)]
+    pub no_auth: bool,
 }
 
 #[derive(clap::Args)]
@@ -359,6 +430,10 @@ pub struct TuneArgs {
     #[arg(long)]
     pub target: String,
 
+    /// Read target connection string from this environment variable
+    #[arg(long)]
+    pub target_env: Option<String>,
+
     /// LLM provider: claude, openai, gemini, bedrock, ollama
     #[arg(long, default_value = "claude")]
     pub provider: String,
@@ -402,6 +477,14 @@ pub struct TuneArgs {
     /// Replay only SELECT queries
     #[arg(long, default_value_t = false)]
     pub read_only: bool,
+
+    /// TLS mode for target database connection: disable, prefer, require
+    #[arg(long, default_value = "prefer")]
+    pub tls_mode: String,
+
+    /// Path to CA certificate file for TLS verification
+    #[arg(long)]
+    pub tls_ca_cert: Option<PathBuf>,
 }
 
 #[derive(clap::Args)]

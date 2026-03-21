@@ -40,7 +40,9 @@ pub async fn start_tuning(
     if !wkl_path.exists() {
         return Err((
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": format!("Workload not found: {}", req.workload_id) })),
+            Json(
+                serde_json::json!({ "error": format!("Workload not found: {}", req.workload_id) }),
+            ),
         ));
     }
 
@@ -57,6 +59,7 @@ pub async fn start_tuning(
         force: false, // Web UI never allows force
         speed: req.speed.unwrap_or(1.0),
         read_only: req.read_only.unwrap_or(false),
+        tls: None,
     };
 
     let state_clone = state.clone();
@@ -100,10 +103,7 @@ pub async fn start_tuning(
                                     iteration,
                                     count: recommendations.len(),
                                 },
-                                TuningEvent::ChangeApplied {
-                                    iteration,
-                                    change,
-                                } => {
+                                TuningEvent::ChangeApplied { iteration, change } => {
                                     let summary = match &change.recommendation {
                                         crate::tuner::types::Recommendation::ConfigChange {
                                             parameter,

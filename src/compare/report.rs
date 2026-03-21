@@ -67,6 +67,14 @@ pub fn print_terminal_report(report: &ComparisonReport) {
     }
     println!();
 
+    if report.total_queries_filtered > 0 {
+        println!(
+            "  (Filtered {} source queries to match replay population)",
+            report.total_queries_filtered
+        );
+        println!();
+    }
+
     if !report.regressions.is_empty() {
         let top_n = report.regressions.len().min(10);
         println!("  Top {} Regressions:", top_n);

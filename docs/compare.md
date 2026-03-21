@@ -154,6 +154,8 @@ If `change_pct > threshold`, the query is added to the regressions list.
 
 Queries with an original duration of 0 microseconds are excluded from regression detection to avoid division-by-zero artifacts.
 
+**ReadOnly mode note:** When comparing a replay that used `--read-only`, the source percentile calculations correctly filter to only the queries that were actually replayed (i.e., SELECT queries). This ensures the source P50/P95/P99 values are computed over the same query population as the replay, producing accurate apples-to-apples comparisons.
+
 ```bash
 # Flag queries that are >50% slower (stricter threshold)
 pg-retest compare \
@@ -351,6 +353,7 @@ pg-retest compare [OPTIONS] --source <PATH> --replay <PATH>
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--json <PATH>` | _(none)_ | Write a JSON comparison report to the specified file. |
+| `--output-format <FMT>` | `text` | Output format for the terminal report: `text` (formatted table) or `json` (structured JSON to stdout). |
 | `--threshold <FLOAT>` | `20.0` | Regression threshold percentage. Queries slower by more than this percentage are flagged as regressions. |
 | `--fail-on-regression` | `false` | Exit with code 1 if any regressions are detected. |
 | `--fail-on-error` | `false` | Exit with code 2 if any query errors occurred during replay. |

@@ -16,6 +16,37 @@ The dashboard will be available at `http://localhost:8080`. The `--data-dir` dir
 | `--data-dir` | `./data` | Directory for SQLite database and workload files   |
 
 
+## Security
+
+### Bind Address
+
+By default, the web server binds to `127.0.0.1` (localhost only). External clients cannot connect unless you explicitly bind to a network interface:
+
+```bash
+# Listen on all interfaces (required for Docker, remote access)
+pg-retest web --port 8080 --bind 0.0.0.0
+```
+
+### Authentication
+
+A bearer token is auto-generated on startup and printed to stdout. All API calls (except `GET /health`) require the token in the `Authorization` header:
+
+```
+Authorization: Bearer <token>
+```
+
+Requests without a valid token receive a `401 Unauthorized` response.
+
+| Flag | Description |
+|------|-------------|
+| `--no-auth` | Disable authentication entirely. Use for development or demo environments only. |
+| `--auth-token <TOKEN>` | Set a specific bearer token instead of auto-generating one. Useful for CI/CD pipelines where the token must be known in advance. |
+
+### Graceful Shutdown
+
+On `SIGTERM` or `SIGINT`, the server drains active HTTP connections and cancels all background tasks (proxy, replay, pipeline) via their cancellation tokens before exiting.
+
+
 ## Overview
 
 The pg-retest web dashboard is a single-page application built on **Axum** (Rust HTTP framework) with an **Alpine.js + Chart.js + Tailwind CSS** frontend. It provides a browser-based interface for every pg-retest operation: managing workload profiles, running the capture proxy, replaying workloads, comparing results, executing A/B tests, running CI/CD pipelines, and browsing historical runs.

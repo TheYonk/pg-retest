@@ -57,9 +57,7 @@ pub fn create_advisor(config: AdvisorConfig) -> Box<dyn TuningAdvisor> {
             })
         }
         LlmProvider::Gemini => {
-            let model = config
-                .model
-                .unwrap_or_else(|| "gemini-2.5-flash".into());
+            let model = config.model.unwrap_or_else(|| "gemini-2.5-flash".into());
             let url = config
                 .api_url
                 .unwrap_or_else(|| "https://generativelanguage.googleapis.com".into());

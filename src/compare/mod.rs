@@ -7,12 +7,13 @@ pub mod threshold;
 use serde::{Deserialize, Serialize};
 
 use crate::profile::WorkloadProfile;
-use crate::replay::ReplayResults;
+use crate::replay::{ReplayMode, ReplayResults};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComparisonReport {
     pub total_queries_source: u64,
     pub total_queries_replayed: u64,
+    pub total_queries_filtered: u64,
     pub total_errors: u64,
     pub source_avg_latency_us: u64,
     pub replay_avg_latency_us: u64,
@@ -37,15 +38,23 @@ pub fn compute_comparison(
     source: &WorkloadProfile,
     results: &[ReplayResults],
     threshold_pct: f64,
+    mode: Option<ReplayMode>,
 ) -> ComparisonReport {
     let mut source_durations: Vec<u64> = Vec::new();
     let mut replay_durations: Vec<u64> = Vec::new();
     let mut regressions = Vec::new();
     let mut total_errors: u64 = 0;
+    let mut total_queries_filtered: u64 = 0;
 
-    // Collect all original durations from source
+    // Collect original durations from source, filtering by replay mode if set
     for session in &source.sessions {
         for query in &session.queries {
+            if let Some(ref m) = mode {
+                if !m.should_replay(query) {
+                    total_queries_filtered += 1;
+                    continue;
+                }
+            }
             source_durations.push(query.duration_us);
         }
     }
@@ -85,6 +94,7 @@ pub fn compute_comparison(
     ComparisonReport {
         total_queries_source: source_durations.len() as u64,
         total_queries_replayed: replay_durations.len() as u64,
+        total_queries_filtered,
         total_errors,
         source_avg_latency_us: avg(&source_durations),
         replay_avg_latency_us: avg(&replay_durations),
@@ -151,4 +161,120 @@ fn percentile(sorted: &[u64], pct: u32) -> u64 {
     }
     let idx = ((pct as f64 / 100.0) * (sorted.len() as f64 - 1.0)).round() as usize;
     sorted[idx.min(sorted.len() - 1)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::profile::{Metadata, Query, QueryKind, Session, WorkloadProfile};
+    use crate::replay::QueryResult;
+    use chrono::Utc;
+
+    #[test]
+    fn test_filtered_percentiles_read_only_mode() {
+        // Source has 3 SELECTs and 2 DML queries
+        let source = WorkloadProfile {
+            version: 2,
+            captured_at: Utc::now(),
+            source_host: "src".into(),
+            pg_version: "16".into(),
+            capture_method: "csv_log".into(),
+            sessions: vec![Session {
+                id: 1,
+                user: "app".into(),
+                database: "db".into(),
+                queries: vec![
+                    Query {
+                        sql: "SELECT 1".into(),
+                        start_offset_us: 0,
+                        duration_us: 100,
+                        kind: QueryKind::Select,
+                        transaction_id: None,
+                    },
+                    Query {
+                        sql: "INSERT INTO t VALUES (1)".into(),
+                        start_offset_us: 200,
+                        duration_us: 9000,
+                        kind: QueryKind::Insert,
+                        transaction_id: None,
+                    },
+                    Query {
+                        sql: "SELECT 2".into(),
+                        start_offset_us: 400,
+                        duration_us: 200,
+                        kind: QueryKind::Select,
+                        transaction_id: None,
+                    },
+                    Query {
+                        sql: "UPDATE t SET x=1".into(),
+                        start_offset_us: 600,
+                        duration_us: 8000,
+                        kind: QueryKind::Update,
+                        transaction_id: None,
+                    },
+                    Query {
+                        sql: "SELECT 3".into(),
+                        start_offset_us: 800,
+                        duration_us: 300,
+                        kind: QueryKind::Select,
+                        transaction_id: None,
+                    },
+                ],
+            }],
+            metadata: Metadata {
+                total_queries: 5,
+                total_sessions: 1,
+                capture_duration_us: 1000,
+            },
+        };
+
+        // Replay results only contain SELECTs (ReadOnly mode skipped DML)
+        let results = vec![ReplayResults {
+            session_id: 1,
+            query_results: vec![
+                QueryResult {
+                    sql: "SELECT 1".into(),
+                    original_duration_us: 100,
+                    replay_duration_us: 90,
+                    success: true,
+                    error: None,
+                },
+                QueryResult {
+                    sql: "SELECT 2".into(),
+                    original_duration_us: 200,
+                    replay_duration_us: 180,
+                    success: true,
+                    error: None,
+                },
+                QueryResult {
+                    sql: "SELECT 3".into(),
+                    original_duration_us: 300,
+                    replay_duration_us: 310,
+                    success: true,
+                    error: None,
+                },
+            ],
+        }];
+
+        // Without mode filter: source includes all 5 queries (with high DML durations)
+        let report_unfiltered = compute_comparison(&source, &results, 20.0, None);
+        assert_eq!(report_unfiltered.total_queries_source, 5);
+        assert_eq!(report_unfiltered.total_queries_filtered, 0);
+        // Source avg includes DML: (100+9000+200+8000+300)/5 = 3520
+        assert_eq!(report_unfiltered.source_avg_latency_us, 3520);
+
+        // With ReadOnly mode: source only includes 3 SELECTs
+        let report_filtered =
+            compute_comparison(&source, &results, 20.0, Some(ReplayMode::ReadOnly));
+        assert_eq!(report_filtered.total_queries_source, 3);
+        assert_eq!(report_filtered.total_queries_replayed, 3);
+        assert_eq!(report_filtered.total_queries_filtered, 2);
+        // Source avg is only SELECTs: (100+200+300)/3 = 200
+        assert_eq!(report_filtered.source_avg_latency_us, 200);
+
+        // With ReadWrite mode: no filtering, same as None
+        let report_rw = compute_comparison(&source, &results, 20.0, Some(ReplayMode::ReadWrite));
+        assert_eq!(report_rw.total_queries_source, 5);
+        assert_eq!(report_rw.total_queries_filtered, 0);
+    }
 }
