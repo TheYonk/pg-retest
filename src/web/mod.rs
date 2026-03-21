@@ -119,20 +119,20 @@ pub async fn run_server(
     let demo_config = state::DemoConfig::from_env();
 
     if let Some(ref dc) = demo_config {
-        println!("Demo mode enabled:");
-        println!("  DB A: {}", dc.db_a);
-        println!("  DB B: {}", dc.db_b);
-        println!("  Workload: {}", dc.workload_path.display());
+        tracing::info!("Demo mode enabled");
+        tracing::info!("  DB A: {}", dc.db_a);
+        tracing::info!("  DB B: {}", dc.db_b);
+        tracing::info!("  Workload: {}", dc.workload_path.display());
 
         // Auto-import the demo workload if the file exists
         if dc.workload_path.exists() {
             match import_demo_workload(&conn, dc, &data_dir) {
-                Ok(()) => println!("  Demo workload imported successfully"),
-                Err(e) => eprintln!("  Warning: failed to import demo workload: {e}"),
+                Ok(()) => tracing::info!("Demo workload imported successfully"),
+                Err(e) => tracing::warn!("Failed to import demo workload: {e}"),
             }
         } else {
-            println!(
-                "  Demo workload not found at {} (will import when available)",
+            tracing::info!(
+                "Demo workload not found at {} (will import when available)",
                 dc.workload_path.display()
             );
         }
@@ -147,18 +147,18 @@ pub async fn run_server(
     let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    println!("pg-retest web dashboard: http://{bind}:{port}");
-    println!("Data directory: {}", data_dir.display());
+    tracing::info!("pg-retest web dashboard: http://{}:{}", bind, port);
+    tracing::info!("Data directory: {}", data_dir.display());
 
     if let Some(ref token) = auth_token {
-        println!("Auth token: {token}");
-        println!("Use: Authorization: Bearer {token}");
+        tracing::info!("Auth token: {token}");
+        tracing::info!("Use: Authorization: Bearer {token}");
     } else {
-        println!("WARNING: Authentication is disabled. Do not expose to untrusted networks.");
+        tracing::warn!("Authentication is disabled. Do not expose to untrusted networks.");
     }
 
     if bind != "127.0.0.1" && auth_token.is_none() {
-        eprintln!("WARNING: Binding to {bind} without authentication is dangerous!");
+        tracing::warn!("Binding to {} without authentication is dangerous!", bind);
     }
 
     let server = axum::serve(listener, app).with_graceful_shutdown(shutdown_signal());
@@ -167,7 +167,7 @@ pub async fn run_server(
 
     // Cleanup: cancel all background tasks
     shutdown_state.tasks.cancel_all().await;
-    println!("Server shut down gracefully");
+    tracing::info!("Server shut down gracefully");
 
     Ok(())
 }
@@ -191,5 +191,5 @@ async fn shutdown_signal() {
         ctrl_c.await.expect("failed to install Ctrl+C handler");
     }
 
-    println!("\nShutdown signal received, draining connections...");
+    tracing::info!("Shutdown signal received, draining connections...");
 }

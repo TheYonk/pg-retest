@@ -39,6 +39,10 @@ pub struct Cli {
     /// Enable verbose logging
     #[arg(short, long, global = true)]
     pub verbose: bool,
+
+    /// Log output format: text or json
+    #[arg(long, global = true, default_value = "text")]
+    pub log_format: String,
 }
 
 #[derive(Subcommand)]
