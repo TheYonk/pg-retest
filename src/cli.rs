@@ -137,6 +137,10 @@ pub struct ReplayArgs {
     #[arg(long)]
     pub scale_bulk: Option<u32>,
 
+    /// Maximum concurrent database connections during replay
+    #[arg(long)]
+    pub max_connections: Option<u32>,
+
     /// TLS mode for target database connection: disable, prefer, require
     #[arg(long, default_value = "prefer")]
     pub tls_mode: String,

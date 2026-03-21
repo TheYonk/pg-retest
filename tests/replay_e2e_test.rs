@@ -369,7 +369,7 @@ async fn test_run_replay_parallel_sessions() {
         },
     ]);
 
-    let results = run_replay(&profile, CONN_STR, ReplayMode::ReadWrite, 0.0, None)
+    let results = run_replay(&profile, CONN_STR, ReplayMode::ReadWrite, 0.0, None, None)
         .await
         .expect("Parallel replay should succeed");
 
@@ -431,7 +431,7 @@ async fn test_replay_read_only_mode_skips_dml() {
         ],
     }]);
 
-    let results = run_replay(&profile, CONN_STR, ReplayMode::ReadOnly, 0.0, None)
+    let results = run_replay(&profile, CONN_STR, ReplayMode::ReadOnly, 0.0, None, None)
         .await
         .expect("Read-only replay should succeed");
 

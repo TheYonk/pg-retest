@@ -1,10 +1,12 @@
+use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
+use tokio::sync::Semaphore;
 use tokio::time::{sleep_until, Instant as TokioInstant};
 use tokio_postgres::NoTls;
 use tokio_postgres_rustls::MakeRustlsConnect;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::profile::{QueryKind, Session};
 use crate::replay::{QueryResult, ReplayMode, ReplayResults};
@@ -120,17 +122,35 @@ pub async fn run_replay(
     connection_string: &str,
     mode: ReplayMode,
     speed: f64,
+    max_connections: Option<u32>,
     tls: Option<MakeRustlsConnect>,
 ) -> Result<Vec<ReplayResults>> {
     let replay_start = TokioInstant::now();
     let mut handles = Vec::new();
+    let session_count = profile.sessions.len();
+
+    let semaphore = max_connections.map(|n| Arc::new(Semaphore::new(n as usize)));
+
+    if let Some(max) = max_connections {
+        if session_count > max as usize {
+            info!(
+                "Concurrency limited to {} (workload has {} sessions)",
+                max, session_count
+            );
+        }
+    }
 
     for session in &profile.sessions {
         let session = session.clone();
         let conn_str = connection_string.to_string();
+        let sem = semaphore.clone();
         let tls_clone = tls.clone();
 
         let handle = tokio::spawn(async move {
+            let _permit = match sem {
+                Some(ref s) => Some(s.acquire().await.unwrap()),
+                None => None,
+            };
             replay_session(&session, &conn_str, mode, speed, replay_start, tls_clone).await
         });
 

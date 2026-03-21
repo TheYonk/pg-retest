@@ -181,6 +181,7 @@ fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
         &args.target,
         mode,
         args.speed,
+        args.max_connections,
         tls,
     ))?;
     let elapsed_us = replay_start.elapsed().as_micros() as u64;
@@ -375,7 +376,14 @@ fn cmd_ab(args: pg_retest::cli::ABArgs) -> Result<()> {
 
     for (label, conn_string) in &parsed_variants {
         println!("Replaying variant '{label}' against {conn_string}...");
-        let results = rt.block_on(run_replay(&profile, conn_string, mode, args.speed, None))?;
+        let results = rt.block_on(run_replay(
+            &profile,
+            conn_string,
+            mode,
+            args.speed,
+            None,
+            None,
+        ))?;
         variant_results.push(VariantResult::from_results(label.clone(), results));
     }
 

@@ -156,7 +156,7 @@ async fn run_ab_task(
 
     let mut variant_results = Vec::new();
     for variant in variants {
-        let results = run_replay(&profile, &variant.target, mode, speed, None).await?;
+        let results = run_replay(&profile, &variant.target, mode, speed, None, None).await?;
         variant_results.push(VariantResult::from_results(variant.label.clone(), results));
 
         state.broadcast(WsMessage::ABVariantCompleted {

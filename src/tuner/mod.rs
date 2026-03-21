@@ -79,6 +79,7 @@ pub async fn run_tuning_with_events(
         &config.target,
         replay_mode,
         config.speed,
+        None,
         config.tls.clone(),
     )
     .await?;
@@ -204,6 +205,7 @@ pub async fn run_tuning_with_events(
             &config.target,
             replay_mode,
             config.speed,
+            None,
             config.tls.clone(),
         )
         .await?;

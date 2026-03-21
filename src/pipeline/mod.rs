@@ -280,6 +280,7 @@ fn run_replay_step(
             mode,
             config.replay.speed,
             None,
+            None,
         ))
         .map_err(|e| anyhow::anyhow!("Replay error: {e}"))?;
 
@@ -340,6 +341,7 @@ fn run_ab_pipeline(
                 &variant.target,
                 mode,
                 config.replay.speed,
+                None,
                 None,
             ))
             .map_err(|e| anyhow::anyhow!("Replay error for '{}': {e}", variant.label))?;

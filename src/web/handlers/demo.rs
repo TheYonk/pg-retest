@@ -282,6 +282,7 @@ async fn run_step_replay(
         crate::replay::ReplayMode::ReadWrite,
         1.0,
         None,
+        None,
     )
     .await
     .map_err(|e| {
@@ -391,6 +392,7 @@ async fn run_step_scale(
         crate::replay::ReplayMode::ReadOnly,
         1.0,
         None,
+        None,
     )
     .await
     .map_err(|e| {
@@ -461,6 +463,7 @@ async fn run_scenario_migration(
         crate::replay::ReplayMode::ReadWrite,
         1.0,
         None,
+        None,
     )
     .await
     .map_err(|e| {
@@ -501,6 +504,7 @@ async fn run_scenario_ab(
         crate::replay::ReplayMode::ReadOnly,
         1.0,
         None,
+        None,
     )
     .await
     .map_err(|e| {
@@ -514,6 +518,7 @@ async fn run_scenario_ab(
         &dc.db_b,
         crate::replay::ReplayMode::ReadOnly,
         1.0,
+        None,
         None,
     )
     .await
