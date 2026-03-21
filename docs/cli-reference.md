@@ -1,6 +1,6 @@
 # CLI Reference
 
-pg-retest is a single binary with 8 subcommands for capturing, replaying, and comparing PostgreSQL workloads.
+pg-retest is a single binary with 11 subcommands for capturing, replaying, and comparing PostgreSQL workloads.
 
 ```
 pg-retest [OPTIONS] <COMMAND>
@@ -201,6 +201,11 @@ pg-retest proxy [OPTIONS] --target <ADDRESS>
 | `--mask-values`   | `false`          | Mask string and numeric literals in captured SQL                |
 | `--no-capture`    | `false`          | Run in proxy-only mode (no workload capture)                   |
 | `--duration`      | *(none)*         | Capture duration (e.g., `60s`, `5m`). Runs until Ctrl+C if not set |
+| `--persistent`    | `false`          | Run proxy in persistent mode (stays running, capture toggled separately) |
+| `--control-port`  | `9091`           | Control port for persistent mode                                   |
+| `--max-capture-queries` | `0`        | Auto-stop capture after this many queries (0 = unlimited)          |
+| `--max-capture-size`    | `0`        | Auto-stop capture when staging DB exceeds this size (e.g., `500MB`, `1GB`) |
+| `--max-capture-duration`| *(none)*   | Auto-stop capture after this duration (e.g., `30m`, `2h`)         |
 
 **Examples:**
 
@@ -313,6 +318,9 @@ pg-retest web [OPTIONS]
 |--------------|----------|----------------------------------------------------|
 | `--port`     | `8080`   | HTTP port to listen on                             |
 | `--data-dir` | `./data` | Data directory for SQLite database and workload files |
+| `--bind`     | `127.0.0.1` | Address to bind to                                 |
+| `--auth-token` | *(auto-generated)* | Bearer token for API authentication       |
+| `--no-auth`  | `false`  | Disable authentication (not recommended for network exposure) |
 
 **Examples:**
 
@@ -332,6 +340,154 @@ pg-retest -v web --port 8080
 - SQLite database is created automatically in the data directory.
 - Workload files are stored in `{data-dir}/workloads/`, replay results in `{data-dir}/results/`.
 - See the [Web Dashboard Guide](web-dashboard.md) for full documentation.
+
+
+### `pg-retest transform`
+
+Transform a workload using AI-generated plans. The transform workflow has three subcommands: `analyze`, `plan`, and `apply`.
+
+```
+pg-retest transform <COMMAND> [OPTIONS]
+```
+
+| Subcommand | Description                                              |
+|------------|----------------------------------------------------------|
+| `analyze`  | Analyze a workload and show query groups (no AI needed)  |
+| `plan`     | Generate a transform plan using AI                       |
+| `apply`    | Apply a transform plan to produce a new workload         |
+
+**Examples:**
+
+```bash
+# Analyze workload (deterministic, no LLM call)
+pg-retest transform analyze --workload workload.wkl --json
+
+# Generate a transform plan via AI
+pg-retest transform plan \
+  --workload workload.wkl \
+  --prompt "Simulate 3x Black Friday traffic on the orders table group" \
+  --provider claude \
+  --output transform-plan.toml
+
+# Apply the plan deterministically
+pg-retest transform apply \
+  --workload workload.wkl \
+  --plan transform-plan.toml \
+  --output transformed.wkl
+
+# Dry-run: see analyzer output and system prompt without calling the LLM
+pg-retest transform plan \
+  --workload workload.wkl \
+  --prompt "..." \
+  --dry-run
+```
+
+**Notes:**
+- The 3-layer architecture keeps AI in an advisory role: Analyze (deterministic) -> Plan (AI-powered) -> Apply (deterministic).
+- Transform operations: **Scale** (duplicate sessions by weight), **Inject** (add new queries), **InjectSession** (add new session), **Remove** (drop query groups).
+- `apply` is deterministic when given the same seed. Default seed is derived from the plan's prompt string hash.
+- LLM providers: Claude, OpenAI, Gemini, Bedrock, Ollama. Set API keys via `--api-key` flag or environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`). Bedrock uses standard AWS credentials.
+
+---
+
+### `pg-retest tune`
+
+Run AI-assisted database tuning. Collects database context, gets LLM recommendations, validates safety, applies changes, replays workload, and compares against baseline. Auto-rollback on p95 regression.
+
+```
+pg-retest tune [OPTIONS] --workload <PATH> --target <CONNSTRING>
+```
+
+| Flag                   | Default      | Description                                                        |
+|------------------------|--------------|--------------------------------------------------------------------|
+| `--workload`           | *(required)* | Path to workload profile (`.wkl`)                                  |
+| `--target`             | *(required)* | Target PostgreSQL connection string                                |
+| `--provider`           | `claude`     | LLM provider: `claude`, `openai`, `gemini`, `bedrock`, `ollama`    |
+| `--api-key`            | *(none)*     | API key (or set env var: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) |
+| `--api-url`            | *(none)*     | Override API URL                                                   |
+| `--model`              | *(none)*     | Override model name                                                |
+| `--max-iterations`     | `3`          | Maximum tuning iterations                                          |
+| `--hint`               | *(none)*     | Natural language hint for the LLM                                  |
+| `--apply`              | `false`      | Apply recommendations (default is dry-run)                         |
+| `--force`              | `false`      | Allow targeting production-looking hostnames                       |
+| `--json`               | *(none)*     | Output JSON report path                                            |
+| `--speed`              | `1.0`        | Replay speed multiplier                                            |
+| `--read-only`          | `false`      | Replay only SELECT queries                                         |
+| `--tls-mode`           | `prefer`     | TLS mode for target connection: `disable`, `prefer`, `require`     |
+| `--tls-ca-cert`        | *(none)*     | Path to CA certificate file for TLS verification                   |
+
+**Examples:**
+
+```bash
+# Dry-run: see recommendations without applying
+pg-retest tune \
+  --workload workload.wkl \
+  --target "host=localhost dbname=mydb user=postgres" \
+  --provider claude \
+  --max-iterations 3 \
+  --hint "optimize for OLTP latency"
+
+# Apply recommendations
+pg-retest tune \
+  --workload workload.wkl \
+  --target "host=localhost dbname=mydb user=postgres" \
+  --provider openai \
+  --apply \
+  --json tuning-report.json
+```
+
+**Notes:**
+- Default mode is dry-run. Use `--apply` to actually execute recommendations.
+- Safety: production hostname check blocks targets containing "prod", "production", "primary", "master", "main". Bypass with `--force`.
+- Allowlist permits ~41 safe PG parameters; dangerous params are blocked.
+- Recommendation types: config changes (`ALTER SYSTEM`), index creation, query rewrites, schema changes.
+- Auto-rollback triggers when p95 latency regresses >5%. Config changes are reversed via `ALTER SYSTEM RESET`; indexes via `DROP INDEX`.
+- Baseline is collected via replay before any tuning iteration.
+
+---
+
+### `pg-retest proxy-ctl`
+
+Control a running persistent proxy. Used to start/stop capture, check status, and recover from crashes.
+
+```
+pg-retest proxy-ctl [OPTIONS] <COMMAND>
+```
+
+| Subcommand      | Description                                        |
+|-----------------|----------------------------------------------------|
+| `status`        | Show proxy status                                  |
+| `start-capture` | Start capturing queries                           |
+| `stop-capture`  | Stop capturing and produce a `.wkl` file           |
+| `recover`       | Recover orphaned capture data from a crash         |
+| `discard`       | Discard orphaned capture data                      |
+
+| Flag       | Default          | Description                                              |
+|------------|------------------|----------------------------------------------------------|
+| `--proxy`  | `localhost:9091` | Address of the running proxy's control endpoint (host:port) |
+
+**Examples:**
+
+```bash
+# Check proxy status
+pg-retest proxy-ctl status --proxy localhost:9091
+
+# Start capturing
+pg-retest proxy-ctl start-capture --proxy localhost:9091
+
+# Stop capturing and save the workload
+pg-retest proxy-ctl stop-capture --proxy localhost:9091 --output workload.wkl
+
+# Recover orphaned data after a crash
+pg-retest proxy-ctl recover --proxy localhost:9091
+```
+
+**Notes:**
+- `proxy-ctl` auto-detects whether the target is a web dashboard or standalone proxy by trying `GET /api/v1/health`.
+- In web mode, uses `/api/v1/proxy/*` endpoints. In standalone mode, uses the control port (default 9091).
+- The `recover` command retrieves capture data that was staged to SQLite but not yet written to a `.wkl` file (e.g., after a crash).
+
+---
 
 
 ## Exit Codes
@@ -355,6 +511,13 @@ For the `compare` subcommand, exit code 1 is returned when `--fail-on-regression
 | Variable    | Description                                                                              |
 |-------------|------------------------------------------------------------------------------------------|
 | `RUST_LOG`  | Controls log verbosity via the `tracing` crate. Example values: `debug`, `info`, `warn`, `pg_retest=debug`, `pg_retest::replay=trace`. Combine with `-v` for full diagnostic output. |
+| `ANTHROPIC_API_KEY` | API key for Claude (used by `tune` and `transform plan` with `--provider claude`). |
+| `OPENAI_API_KEY` | API key for OpenAI (used by `tune` and `transform plan` with `--provider openai`). |
+| `GEMINI_API_KEY` | API key for Gemini (used by `tune` and `transform plan` with `--provider gemini`). |
+| `PG_RETEST_DEMO` | Set to `true` to enable demo mode in the web dashboard. |
+| `DEMO_DB_A` | Connection string for demo database A (used in demo mode). |
+| `DEMO_DB_B` | Connection string for demo database B (used in demo mode). |
+| `DEMO_WORKLOAD` | Path to demo workload file (used in demo mode). |
 
 **Example:**
 
