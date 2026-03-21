@@ -273,6 +273,18 @@ pub struct WebArgs {
     /// Data directory for SQLite database and workload files
     #[arg(long, default_value = "./data")]
     pub data_dir: std::path::PathBuf,
+
+    /// Address to bind to (default: 127.0.0.1 for security)
+    #[arg(long, default_value = "127.0.0.1")]
+    pub bind: String,
+
+    /// Bearer token for API authentication (auto-generated if not set)
+    #[arg(long)]
+    pub auth_token: Option<String>,
+
+    /// Disable authentication (NOT recommended for network exposure)
+    #[arg(long, default_value_t = false)]
+    pub no_auth: bool,
 }
 
 #[derive(clap::Args)]

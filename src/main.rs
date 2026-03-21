@@ -384,8 +384,22 @@ fn cmd_ab(args: pg_retest::cli::ABArgs) -> Result<()> {
 fn cmd_web(args: pg_retest::cli::WebArgs) -> Result<()> {
     use pg_retest::web;
 
+    let auth_token = if args.no_auth {
+        None
+    } else {
+        Some(
+            args.auth_token
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        )
+    };
+
     let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(web::run_server(args.port, args.data_dir))
+    rt.block_on(web::run_server(
+        args.port,
+        args.data_dir,
+        args.bind,
+        auth_token,
+    ))
 }
 
 fn cmd_transform(args: pg_retest::cli::TransformArgs) -> Result<()> {

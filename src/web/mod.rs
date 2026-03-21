@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod db;
 pub mod handlers;
 pub mod routes;
@@ -100,7 +101,12 @@ fn import_demo_workload(
 }
 
 /// Start the web server on the given port.
-pub async fn run_server(port: u16, data_dir: PathBuf) -> Result<()> {
+pub async fn run_server(
+    port: u16,
+    data_dir: PathBuf,
+    bind: String,
+    auth_token: Option<String>,
+) -> Result<()> {
     // Ensure data directory exists
     std::fs::create_dir_all(&data_dir)?;
 
@@ -135,13 +141,24 @@ pub async fn run_server(port: u16, data_dir: PathBuf) -> Result<()> {
     let state = AppState::new(conn, data_dir.clone(), demo_config);
 
     // Build router: API routes + static file fallback
-    let app = routes::build_router(state).fallback(static_handler);
+    let app = routes::build_router(state, auth_token.clone()).fallback(static_handler);
 
-    let addr = format!("0.0.0.0:{port}");
+    let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    println!("pg-retest web dashboard: http://localhost:{port}");
+    println!("pg-retest web dashboard: http://{bind}:{port}");
     println!("Data directory: {}", data_dir.display());
+
+    if let Some(ref token) = auth_token {
+        println!("Auth token: {token}");
+        println!("Use: Authorization: Bearer {token}");
+    } else {
+        println!("WARNING: Authentication is disabled. Do not expose to untrusted networks.");
+    }
+
+    if bind != "127.0.0.1" && auth_token.is_none() {
+        eprintln!("WARNING: Binding to {bind} without authentication is dangerous!");
+    }
 
     axum::serve(listener, app).await?;
     Ok(())

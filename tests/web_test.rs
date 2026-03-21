@@ -11,7 +11,7 @@ async fn test_health_endpoint() {
     web::db::init_db(&conn).unwrap();
 
     let state = web::state::AppState::new(conn, data_path, None);
-    let app = web::routes::build_router(state);
+    let app = web::routes::build_router(state, None);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -46,7 +46,7 @@ async fn test_workload_list_empty() {
     web::db::init_db(&conn).unwrap();
 
     let state = web::state::AppState::new(conn, data_path, None);
-    let app = web::routes::build_router(state);
+    let app = web::routes::build_router(state, None);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -79,7 +79,7 @@ async fn test_runs_list_empty() {
     web::db::init_db(&conn).unwrap();
 
     let state = web::state::AppState::new(conn, data_path, None);
-    let app = web::routes::build_router(state);
+    let app = web::routes::build_router(state, None);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -112,7 +112,7 @@ async fn test_tasks_endpoint() {
     web::db::init_db(&conn).unwrap();
 
     let state = web::state::AppState::new(conn, data_path, None);
-    let app = web::routes::build_router(state);
+    let app = web::routes::build_router(state, None);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -145,7 +145,7 @@ async fn test_pipeline_validate() {
     web::db::init_db(&conn).unwrap();
 
     let state = web::state::AppState::new(conn, data_path, None);
-    let app = web::routes::build_router(state);
+    let app = web::routes::build_router(state, None);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -197,7 +197,7 @@ async fn test_static_files_served() {
     web::db::init_db(&conn).unwrap();
 
     let state = web::state::AppState::new(conn, data_path, None);
-    let app = web::routes::build_router(state).fallback(web::static_handler);
+    let app = web::routes::build_router(state, None).fallback(web::static_handler);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

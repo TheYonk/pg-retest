@@ -1,17 +1,20 @@
 use axum::{
+    middleware,
     routing::{delete, get, post},
     Router,
 };
 
+use super::auth::{self, AuthToken};
 use super::handlers;
 use super::state::AppState;
 use super::ws;
 
 /// Build the complete API router.
-pub fn build_router(state: AppState) -> Router {
-    let api = Router::new()
-        // Health
-        .route("/health", get(handlers::health))
+pub fn build_router(state: AppState, auth_token: Option<String>) -> Router {
+    // Health endpoint is always public (unauthenticated)
+    let public_api = Router::new().route("/health", get(handlers::health));
+
+    let protected_api = Router::new()
         .route("/tasks", get(handlers::list_tasks))
         // WebSocket
         .route("/ws", get(ws::ws_handler))
@@ -94,6 +97,17 @@ pub fn build_router(state: AppState) -> Router {
         .route("/runs/stats", get(handlers::runs::run_stats))
         .route("/runs/trends", get(handlers::runs::run_trends))
         .route("/runs/{id}", get(handlers::runs::get_run));
+
+    // Apply auth middleware only to protected routes
+    let protected_api = if let Some(token) = auth_token {
+        protected_api
+            .layer(axum::Extension(AuthToken(token)))
+            .layer(middleware::from_fn(auth::require_auth))
+    } else {
+        protected_api
+    };
+
+    let api = Router::new().merge(public_api).merge(protected_api);
 
     Router::new().nest("/api/v1", api).with_state(state)
 }
