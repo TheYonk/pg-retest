@@ -222,6 +222,7 @@ fn cmd_replay(args: pg_retest::cli::ReplayArgs) -> Result<()> {
 }
 
 fn cmd_compare(args: pg_retest::cli::CompareArgs) -> Result<()> {
+    use pg_retest::cli::OutputFormat;
     use pg_retest::compare::{compute_comparison, evaluate_outcome, report};
     use pg_retest::profile::io;
     use pg_retest::replay::ReplayResults;
@@ -232,7 +233,16 @@ fn cmd_compare(args: pg_retest::cli::CompareArgs) -> Result<()> {
     let results: Vec<ReplayResults> = rmp_serde::from_slice(&replay_bytes)?;
 
     let report_data = compute_comparison(&source, &results, args.threshold, None);
-    report::print_terminal_report(&report_data);
+
+    match args.output_format {
+        OutputFormat::Text => {
+            report::print_terminal_report(&report_data);
+        }
+        OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(&report_data)?;
+            println!("{json}");
+        }
+    }
 
     if let Some(json_path) = &args.json {
         report::write_json_report(json_path, &report_data)?;
@@ -240,7 +250,9 @@ fn cmd_compare(args: pg_retest::cli::CompareArgs) -> Result<()> {
     }
 
     let outcome = evaluate_outcome(&report_data, args.fail_on_regression, args.fail_on_error);
-    println!("  Result: {}", outcome.label());
+    if args.output_format == OutputFormat::Text {
+        println!("  Result: {}", outcome.label());
+    }
 
     let code = outcome.exit_code();
     if code != 0 {
@@ -252,15 +264,49 @@ fn cmd_compare(args: pg_retest::cli::CompareArgs) -> Result<()> {
 
 fn cmd_inspect(args: pg_retest::cli::InspectArgs) -> Result<()> {
     use pg_retest::classify::{classify_workload, print_classification};
+    use pg_retest::cli::OutputFormat;
     use pg_retest::profile::io;
 
     let profile = io::read_profile(&args.path)?;
-    let json = serde_json::to_string_pretty(&profile)?;
-    println!("{json}");
+
+    match args.output_format {
+        OutputFormat::Text => {
+            println!("  Workload Profile Summary");
+            println!("  ========================");
+            println!();
+            println!("  Source host:      {}", profile.source_host);
+            println!("  PG version:       {}", profile.pg_version);
+            println!("  Capture method:   {}", profile.capture_method);
+            println!("  Total sessions:   {}", profile.metadata.total_sessions);
+            println!("  Total queries:    {}", profile.metadata.total_queries);
+            println!("  Captured at:      {}", profile.captured_at);
+            println!();
+            for session in &profile.sessions {
+                println!(
+                    "  Session {} — {} queries",
+                    session.id,
+                    session.queries.len()
+                );
+            }
+            println!();
+        }
+        OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(&profile)?;
+            println!("{json}");
+        }
+    }
 
     if args.classify {
         let classification = classify_workload(&profile);
-        print_classification(&classification);
+        match args.output_format {
+            OutputFormat::Text => {
+                print_classification(&classification);
+            }
+            OutputFormat::Json => {
+                let json = serde_json::to_string_pretty(&classification)?;
+                println!("{json}");
+            }
+        }
     }
 
     Ok(())
@@ -399,7 +445,16 @@ fn cmd_ab(args: pg_retest::cli::ABArgs) -> Result<()> {
     }
 
     let report = compute_ab_comparison(variant_results, args.threshold);
-    print_ab_report(&report);
+
+    match args.output_format {
+        pg_retest::cli::OutputFormat::Text => {
+            print_ab_report(&report);
+        }
+        pg_retest::cli::OutputFormat::Json => {
+            let json = serde_json::to_string_pretty(&report)?;
+            println!("{json}");
+        }
+    }
 
     if let Some(json_path) = &args.json {
         write_ab_json(json_path, &report)?;

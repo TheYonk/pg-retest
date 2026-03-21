@@ -2,6 +2,33 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+/// Output format for CLI commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Text,
+    Json,
+}
+
+impl std::str::FromStr for OutputFormat {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "text" => Ok(OutputFormat::Text),
+            "json" => Ok(OutputFormat::Json),
+            other => Err(format!("Unknown format '{}'. Use: text, json", other)),
+        }
+    }
+}
+
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputFormat::Text => write!(f, "text"),
+            OutputFormat::Json => write!(f, "json"),
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(name = "pg-retest")]
 #[command(version, about = "Capture, replay, and compare PostgreSQL workloads")]
@@ -179,6 +206,10 @@ pub struct CompareArgs {
     /// Exit non-zero if query errors occurred
     #[arg(long, default_value_t = false)]
     pub fail_on_error: bool,
+
+    /// Output format for stdout: text or json
+    #[arg(long, default_value = "text")]
+    pub output_format: OutputFormat,
 }
 
 #[derive(clap::Args)]
@@ -189,6 +220,10 @@ pub struct InspectArgs {
     /// Show workload classification breakdown
     #[arg(long, default_value_t = false)]
     pub classify: bool,
+
+    /// Output format for stdout: text or json
+    #[arg(long, default_value = "text")]
+    pub output_format: OutputFormat,
 }
 
 #[derive(clap::Args)]
@@ -278,6 +313,10 @@ pub struct ABArgs {
     /// Regression threshold percentage
     #[arg(long, default_value_t = 20.0)]
     pub threshold: f64,
+
+    /// Output format for stdout: text or json
+    #[arg(long, default_value = "text")]
+    pub output_format: OutputFormat,
 }
 
 #[derive(clap::Args)]
