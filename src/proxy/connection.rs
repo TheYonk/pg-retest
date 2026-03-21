@@ -97,8 +97,9 @@ async fn handle_connection_inner(
         return Ok(());
     }
 
-    // Send capture session start
-    if !no_capture.load(Ordering::Relaxed) {
+    // Always send session start — collector needs user/database metadata
+    // even if capture is toggled on later for this session
+    {
         let event = CaptureEvent::SessionStart {
             session_id,
             user,

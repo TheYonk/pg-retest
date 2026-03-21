@@ -87,9 +87,17 @@ pub(crate) async fn run_collector(
                 sql,
                 timestamp,
             } => {
-                if let Some(state) = sessions.get_mut(&session_id) {
-                    state.pending_sql = Some((sql, timestamp));
-                }
+                let state = sessions.entry(session_id).or_insert_with(|| {
+                    debug!("Capture: late-join session {session_id} (started after capture began)");
+                    SessionState {
+                        user: "unknown".to_string(),
+                        database: "unknown".to_string(),
+                        session_start: timestamp,
+                        queries: Vec::new(),
+                        pending_sql: None,
+                    }
+                });
+                state.pending_sql = Some((sql, timestamp));
             }
             CaptureEvent::QueryComplete {
                 session_id,
@@ -135,8 +143,12 @@ pub(crate) async fn run_collector(
         }
     }
 
+    // Filter out sessions with no captured queries (e.g., connected
+    // before capture was enabled and disconnected without any queries
+    // being captured during the capture window)
     sessions
         .into_iter()
+        .filter(|(_, state)| !state.queries.is_empty())
         .map(|(id, state)| (id, state.user, state.database, state.queries))
         .collect()
 }
@@ -268,6 +280,14 @@ pub(crate) async fn run_staging_collector(
                     sql,
                     timestamp,
                 } => {
+                    // Lazily create session metadata if this session started
+                    // before capture was enabled (persistent proxy toggle).
+                    session_meta.entry(session_id).or_insert_with(|| {
+                        debug!(
+                            "Staging: late-join session {session_id} (connected before capture)"
+                        );
+                        ("unknown".to_string(), "unknown".to_string(), timestamp)
+                    });
                     pending.insert(session_id, (sql, timestamp));
                 }
                 CaptureEvent::QueryComplete {
