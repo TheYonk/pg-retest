@@ -84,7 +84,7 @@ fn test_tuning_report_json_output() {
 }
 
 #[test]
-fn test_blocked_sql_operations() {
+fn test_schema_change_allowlist_integration() {
     let recs = vec![
         Recommendation::SchemaChange {
             sql: "DROP TABLE users".into(),
@@ -105,6 +105,6 @@ fn test_blocked_sql_operations() {
         },
     ];
     let (safe, rejected) = validate_recommendations(&recs);
-    assert_eq!(safe.len(), 2); // ADD COLUMN + CREATE INDEX
-    assert_eq!(rejected.len(), 1); // DROP TABLE
+    assert_eq!(safe.len(), 1); // only CREATE INDEX is on allowlist
+    assert_eq!(rejected.len(), 2); // DROP TABLE + ALTER TABLE not on allowlist
 }
