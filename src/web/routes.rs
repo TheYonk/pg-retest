@@ -101,8 +101,8 @@ pub fn build_router(state: AppState, auth_token: Option<String>) -> Router {
     // Apply auth middleware only to protected routes
     let protected_api = if let Some(token) = auth_token {
         protected_api
-            .layer(axum::Extension(AuthToken(token)))
             .layer(middleware::from_fn(auth::require_auth))
+            .layer(axum::Extension(AuthToken(token)))
     } else {
         protected_api
     };
