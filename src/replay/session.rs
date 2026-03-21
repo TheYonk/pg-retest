@@ -19,18 +19,24 @@ pub async fn replay_session(
     replay_start: TokioInstant,
     tls: Option<MakeRustlsConnect>,
 ) -> Result<ReplayResults> {
-    let (client, connection) = if let Some(tls_connector) = tls {
-        tokio_postgres::connect(connection_string, tls_connector).await?
+    let client = if let Some(tls_connector) = tls {
+        let (client, connection) =
+            tokio_postgres::connect(connection_string, tls_connector).await?;
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                warn!("Connection error for session: {e}");
+            }
+        });
+        client
     } else {
-        tokio_postgres::connect(connection_string, NoTls).await?
+        let (client, connection) = tokio_postgres::connect(connection_string, NoTls).await?;
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                warn!("Connection error for session: {e}");
+            }
+        });
+        client
     };
-
-    // Spawn the connection handler
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            warn!("Connection error for session: {e}");
-        }
-    });
 
     let mut query_results = Vec::new();
     let mut failed_txn_id: Option<u64> = None;

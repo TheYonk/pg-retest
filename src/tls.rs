@@ -36,8 +36,11 @@ pub fn make_tls_connector(
                     .with_no_client_auth()
             } else {
                 // Use system CA certificates
+                let mut root_store = rustls::RootCertStore::empty();
                 let native_certs = rustls_native_certs::load_native_certs();
-                let root_store = rustls::RootCertStore::from_iter(native_certs.certs.into_iter());
+                for cert in native_certs.certs {
+                    let _ = root_store.add(cert);
+                }
                 rustls::ClientConfig::builder()
                     .with_root_certificates(root_store)
                     .with_no_client_auth()

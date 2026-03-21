@@ -68,7 +68,7 @@ pub struct TuningReport {
     pub all_changes: Vec<AppliedChange>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TuningConfig {
     pub workload_path: std::path::PathBuf,
     pub target: String,
@@ -83,6 +83,19 @@ pub struct TuningConfig {
     pub speed: f64,
     pub read_only: bool,
     pub tls: Option<MakeRustlsConnect>,
+}
+
+impl std::fmt::Debug for TuningConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TuningConfig")
+            .field("workload_path", &self.workload_path)
+            .field("target", &self.target)
+            .field("provider", &self.provider)
+            .field("max_iterations", &self.max_iterations)
+            .field("apply", &self.apply)
+            .field("tls", &self.tls.as_ref().map(|_| "Some(MakeRustlsConnect)"))
+            .finish()
+    }
 }
 
 /// Events emitted during tuning for real-time progress reporting.
