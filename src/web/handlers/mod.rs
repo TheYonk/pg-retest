@@ -15,11 +15,13 @@ use serde_json::json;
 use super::state::AppState;
 
 /// GET /api/v1/health
-pub async fn health() -> Json<serde_json::Value> {
+pub async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let uptime_secs = state.started_at.elapsed().as_secs();
     Json(json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
         "name": "pg-retest",
+        "uptime_seconds": uptime_secs,
     }))
 }
 
