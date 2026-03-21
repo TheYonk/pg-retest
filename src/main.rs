@@ -567,11 +567,61 @@ fn cmd_tune(args: pg_retest::cli::TuneArgs) -> Result<()> {
     let tls_mode = pg_retest::tls::parse_tls_mode(&args.tls_mode)?;
     let tls = pg_retest::tls::make_tls_connector(tls_mode, args.tls_ca_cert.as_deref())?;
 
+    // Validate API key for providers that need one
+    let api_key = match args.provider.as_str() {
+        "bedrock" | "ollama" => args.api_key, // No API key required
+        "claude" => {
+            let key = args
+                .api_key
+                .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok());
+            if key.is_none() {
+                anyhow::bail!(
+                    "Claude provider requires an API key.\n\
+                     Set it with: export ANTHROPIC_API_KEY=sk-ant-...\n\
+                     Or use: --api-key <key>"
+                );
+            }
+            key
+        }
+        "openai" => {
+            let key = args
+                .api_key
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+            if key.is_none() {
+                anyhow::bail!(
+                    "OpenAI provider requires an API key.\n\
+                     Set it with: export OPENAI_API_KEY=sk-...\n\
+                     Or use: --api-key <key>"
+                );
+            }
+            key
+        }
+        "gemini" => {
+            let key = args
+                .api_key
+                .or_else(|| std::env::var("GEMINI_API_KEY").ok());
+            if key.is_none() {
+                anyhow::bail!(
+                    "Gemini provider requires an API key.\n\
+                     Set it with: export GEMINI_API_KEY=...\n\
+                     Or use: --api-key <key>"
+                );
+            }
+            key
+        }
+        other => {
+            anyhow::bail!(
+                "Unknown provider '{}'. Use: claude, openai, gemini, bedrock, ollama",
+                other
+            );
+        }
+    };
+
     let config = pg_retest::tuner::types::TuningConfig {
         workload_path: args.workload,
         target: args.target,
         provider: args.provider,
-        api_key: args.api_key,
+        api_key,
         api_url: args.api_url,
         model: args.model,
         max_iterations: args.max_iterations,
