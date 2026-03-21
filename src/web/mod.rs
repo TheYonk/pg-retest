@@ -139,6 +139,7 @@ pub async fn run_server(
     }
 
     let state = AppState::new(conn, data_dir.clone(), demo_config);
+    let shutdown_state = state.clone();
 
     // Build router: API routes + static file fallback
     let app = routes::build_router(state, auth_token.clone()).fallback(static_handler);
@@ -160,6 +161,35 @@ pub async fn run_server(
         eprintln!("WARNING: Binding to {bind} without authentication is dangerous!");
     }
 
-    axum::serve(listener, app).await?;
+    let server = axum::serve(listener, app).with_graceful_shutdown(shutdown_signal());
+
+    server.await?;
+
+    // Cleanup: cancel all background tasks
+    shutdown_state.tasks.cancel_all().await;
+    println!("Server shut down gracefully");
+
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = sigterm.recv() => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        ctrl_c.await.expect("failed to install Ctrl+C handler");
+    }
+
+    println!("\nShutdown signal received, draining connections...");
 }

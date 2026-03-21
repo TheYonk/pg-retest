@@ -98,6 +98,15 @@ impl TaskManager {
             .any(|h| h.task_type == task_type && !h.join_handle.is_finished())
     }
 
+    /// Cancel all running tasks (used during graceful shutdown).
+    pub async fn cancel_all(&self) {
+        let mut tasks = self.tasks.write().await;
+        for (_id, handle) in tasks.drain() {
+            handle.cancel_token.cancel();
+            handle.join_handle.abort();
+        }
+    }
+
     /// Get a specific task's info.
     pub async fn get(&self, id: &str) -> Option<TaskInfo> {
         let tasks = self.tasks.read().await;
